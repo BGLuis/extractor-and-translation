@@ -1,0 +1,2 @@
+# Dependências do projeto
+deep_translator==1.11.4
