@@ -7,11 +7,10 @@
 - [x] Investigar tradução japonesa
 - [x] Investigar arquivos que não traduzem
 - [ ] Criar cli
-- [ ] Separa estratores de texto por jogo
-- [ ] Separa traduções por agente
-- [ ] Deixar mais modular
-- [ ] Organizar essa zona
-- [ ] Criar arquivo separado para debug
-- [ ] Verificar o texto antes de traduzir
+- [x] Separa estratores de texto por jogo
+- [x] Separa traduções por agente
+- [x] Deixar mais modular
+- [x] Organizar essa zona
+- [ ] Verificar o texto depois de traduzir
 - [x] Separa o cache por agente
-- [ ] Criar Commun
+- [x] Criar Commun
