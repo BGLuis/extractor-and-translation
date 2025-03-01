@@ -1,7 +1,9 @@
 from commun.IntWrapper import IntWrapper
 
 
-def dictToList(dictionary, extract=[]):
+def dictToList(dictionary, extract=None):
+    if extract is None:
+        extract = []
     if isinstance(dictionary, dict) or isinstance(dictionary, list):
         haystack = dictionary.items() if isinstance(dictionary, dict) else enumerate(dictionary)
         for key, value in haystack:
@@ -11,7 +13,9 @@ def dictToList(dictionary, extract=[]):
     return extract
 
 
-def interactive_item(obj, texts, occurrences=IntWrapper(0)):
+def interactive_item(obj, texts, occurrences=None):
+    if occurrences is None:
+        occurrences = IntWrapper(0)
     if isinstance(obj, dict) or isinstance(obj, list):
         haystack = obj.items() if isinstance(obj, dict) else enumerate(obj)
         for key, value in haystack:

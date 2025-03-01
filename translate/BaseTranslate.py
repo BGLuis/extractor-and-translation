@@ -13,6 +13,7 @@ class BaseTranslate(ABC):
     CHAR_LIMIT_DECREMENT = 1000
     lang_source = 'en'
     lang_target = 'pt'
+    cache_path_base = 'cache'
     MAX_REQUESTS_SIMULTANEOUSLY = 99
 
     def __init__(self, agent, delimiter=None, char_limit=None,lang_source=None, lang_target=None):
