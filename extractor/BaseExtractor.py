@@ -77,7 +77,7 @@ class BaseExtractor(ABC):
         self.threads_status.append(status)
 
 
-    def process_file(self, file, retries=5, delay=20):
+    def process_file(self, file, retries=6, delay=20):
         with self.semaphore:
             translate = copy.deepcopy(self.translate)
             for attempt in range(retries):

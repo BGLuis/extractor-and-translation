@@ -84,31 +84,16 @@ class RPGMakerExtractor(BaseExtractor):
     def fix_text_translate(texts):
         texts_list = TextsUtils.dictToList(texts)
 
+        patterns = [
+            (r'\\ ', lambda m: m.group(0).replace(' ', '')),
+            (r'\b[a-zA-Z]{1,2} \[', lambda m: m.group(0).replace(' ', '')),
+            (r'(?i)\bif \(', lambda m: m.group(0).replace(' ', '').lower()),
+        ]
+
         for i,text in enumerate(texts_list):
-            pattern_var = r'\\ \b[a-zA-Z]{1,2} \[\d+\]'
-            vars = re.findall(pattern_var, text)
-            for var in vars:
-                texts_list[i] = text.replace(var, var.replace(' ', ''), 1)
-
-            pattern_if = r'(?i)\bif \(\b[a-zA-Z]{1,2} \[\d+\]\)'
-            ifs = re.findall(pattern_if, text)
-            for if_ in ifs:
-                texts_list[i] = text.replace(if_, if_.replace(' ', '').lower(), 1)
-
-            pattern_sound_effect = r'\\ SE \[.*?\]'
-            ses = re.findall(pattern_sound_effect, text)
-            for se in ses:
-                texts_list[i] = text.replace(se, se.replace(' ', ''), 1)
-
-            pattern_var_var = r'\\ \b[a-zA-Z]{1,2} \[\\v\[\d+\]\]'
-            var_vars = re.findall(pattern_var_var, text)
-            for var_var in var_vars:
-                texts_list[i] = text.replace(var_var, var_var.replace(' ', ''), 1)
-
-            pattern_var_var = r'\\ '
-            var_vars = re.findall(pattern_var_var, text)
-            for var_var in var_vars:
-                texts_list[i] = text.replace(var_var, var_var.replace(' ', ''), 1)
+            for pattern, repl in patterns:
+                text = re.sub(pattern, repl, text)
+            texts_list[i] = text
 
         TextsUtils.interactive_item(texts, texts_list)
 
