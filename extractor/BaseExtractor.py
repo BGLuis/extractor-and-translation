@@ -87,8 +87,13 @@ class BaseExtractor(ABC):
                     if temp:
                         self.add_threads_status({'file': file, 'status': 'process', 'msg': "Processing file"})
                         temp = translate.translator(temp)
-                        self.import_file(data[0], temp, 'process')
+                        self.import_file(data[0], temp, self.folderProcess)
                         self.add_threads_status({'file': file, 'status': 'success', 'msg': "Processed successfully"})
+                    else:
+                        self.add_threads_status(
+                            {'file': file, 'status': 'ignore', 'msg': "No text to process"})
+                        self.import_file(data[0], data[1], self.folderOutput)
+
                     return
                 except Exception as e:
                     self.add_threads_status(
@@ -113,10 +118,6 @@ class BaseExtractor(ABC):
     def import_files(self):
         for thread in self.threads:
             thread.join()
-
-        for file in glob.glob(self.folderInput + '/*'):
-            file_name = os.path.basename(file)
-            self.import_file(file_name, self.extract_files(file)[1], BaseExtractor.folderOutput)
 
         for file in glob.glob(self.folderProcess + '/*'):
             file_name = os.path.basename(file)

@@ -87,7 +87,7 @@ def show_status(threads_status):
         table = []
         for status in threads_status:
             table.append([status['file'], status_color(status['status']), status['msg']])
-            if status['status'] not in ['erro', 'success']:
+            if status['status'] not in ['erro', 'success', 'ignore']:
                 all_done = False
         print(tabulate(table, headers=['File', 'Status', 'Message'], tablefmt='plain'))
         if all_done:
