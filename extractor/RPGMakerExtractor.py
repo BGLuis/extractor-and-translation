@@ -66,18 +66,18 @@ class RPGMakerExtractor(BaseExtractor):
             for item in new_json:
                 extract_event_text(item)
 
-        elif file_name == "Tilesets.json" or file_name == "ContainerProperties.json" or file_name == "Animations.json"or file_name == "TrpParticles.json":
-            pass
 
-        else:
+        elif file_name in ["MapInfos.json", "Weapons.json", "Items.json", "Skills.json", "States.json", "Enemies.json",
+                           "Actors.json", "Armors.json"]:
             for item in new_json:
                 if item and item['name'] != '':
                     obj = {'id': item['id']}
-                    keys = ['name', 'description', 'message1', 'message2']
-                    for key in keys:
-                        if key in item and item[key] != '':
-                            obj[key] = item[key]
+                    keys_pattern = re.compile(r'name|profile|description|message\d{1}')
+                    for key, value in item.items():
+                        if keys_pattern.match(key) and value != '':
+                            obj[key] = value
                     text.append(obj)
+
         return text
 
     @staticmethod
@@ -159,7 +159,9 @@ class RPGMakerExtractor(BaseExtractor):
 
                         new_json[texts['id']]['pages'][b['id']]['list'][c['id']] = value
 
-        else:
+
+        elif file_name in ["MapInfos.json", "Weapons.json", "Items.json", "Skills.json", "States.json", "Enemies.json",
+                           "Actors.json", "Armors.json"]:
             for texts in new_data:
                 for keys in texts:
                     if keys != 'id':
