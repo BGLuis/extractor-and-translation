@@ -5,6 +5,7 @@ import commun.TextsUtils as TextsUtils
 
 class GoogleTranslate(BaseTranslate):
     agent = 'googleTraslator'
+    MAX_REQUESTS_SIMULTANEOUSLY = 9
 
     def __init__(self, delimiter=None, char_limit=None, lang_source=None, lang_target=None):
         super().__init__(delimiter, char_limit, lang_source, lang_target)

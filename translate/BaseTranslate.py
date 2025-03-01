@@ -4,6 +4,7 @@ import json
 
 
 class BaseTranslate(ABC):
+    agent = 'BaseTranslate'
     cache = {}
     cache_path = ''
     delimiter = '\n<span> </span>\n'
@@ -12,7 +13,7 @@ class BaseTranslate(ABC):
     CHAR_LIMIT_DECREMENT = 1000
     lang_source = 'en'
     lang_target = 'pt'
-    cache_path_base = 'cache'
+    MAX_REQUESTS_SIMULTANEOUSLY = 99
 
     def __init__(self, agent, delimiter=None, char_limit=None,lang_source=None, lang_target=None):
         self.delimiter = delimiter if delimiter else BaseTranslate.delimiter
@@ -39,6 +40,14 @@ class BaseTranslate(ABC):
         return cls(BaseTranslate.delimiter, BaseTranslate.char_limit, BaseTranslate.lang_source, BaseTranslate.lang_target)
 
 
+    def reduce_limite(self):
+        if self.char_limit > BaseTranslate.CHAR_LIMIT_MIN:
+            self.char_limit -= BaseTranslate.CHAR_LIMIT_DECREMENT
+            return True
+
+    def list_lang(self):
+        return self.translate_client.get_supported_languages()
+
     @staticmethod
     def init_cache(cache_path):
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
@@ -63,15 +72,10 @@ class BaseTranslate(ABC):
                 f.write(json.dumps(file_cache, ensure_ascii=False, indent=4))
 
 
-    def reduce_limite(self):
-        if self.char_limit > BaseTranslate.CHAR_LIMIT_MIN:
-            self.char_limit -= BaseTranslate.CHAR_LIMIT_DECREMENT
-            return True
-
-
     @abstractmethod
     def translate_batch(self, texts):
         pass
+
 
     @abstractmethod
     def translator(self, texts):

@@ -4,6 +4,7 @@ import re
 
 
 class RPGMakerExtractor(BaseExtractor):
+    name = 'RPG Maker'
     def __init__(self, translate):
         super().__init__(translate)
 
@@ -65,7 +66,7 @@ class RPGMakerExtractor(BaseExtractor):
             for item in new_json:
                 extract_event_text(item)
 
-        elif file_name == "Tilesets.json" or file_name == "ContainerProperties.json" or file_name == "Animations.json":
+        elif file_name == "Tilesets.json" or file_name == "ContainerProperties.json" or file_name == "Animations.json"or file_name == "TrpParticles.json":
             pass
 
         else:
@@ -83,28 +84,33 @@ class RPGMakerExtractor(BaseExtractor):
     def fix_text_translate(texts):
         texts_list = TextsUtils.dictToList(texts)
 
-        for text in texts_list:
+        for i,text in enumerate(texts_list):
             pattern_var = r'\\ \b[a-zA-Z]{1,2} \[\d+\]'
             vars = re.findall(pattern_var, text)
             for var in vars:
-                text = text.replace(var, var.replace(' ', ''), 1)
+                texts_list[i] = text.replace(var, var.replace(' ', ''), 1)
 
             pattern_if = r'(?i)\bif \(\b[a-zA-Z]{1,2} \[\d+\]\)'
             ifs = re.findall(pattern_if, text)
             for if_ in ifs:
-                text = text.replace(if_, if_.replace(' ', '').lower(), 1)
+                texts_list[i] = text.replace(if_, if_.replace(' ', '').lower(), 1)
 
             pattern_sound_effect = r'\\ SE \[.*?\]'
             ses = re.findall(pattern_sound_effect, text)
             for se in ses:
-                text = text.replace(se, se.replace(' ', ''), 1)
+                texts_list[i] = text.replace(se, se.replace(' ', ''), 1)
 
             pattern_var_var = r'\\ \b[a-zA-Z]{1,2} \[\\v\[\d+\]\]'
             var_vars = re.findall(pattern_var_var, text)
             for var_var in var_vars:
-                text = text.replace(var_var, var_var.replace(' ', ''), 1)
+                texts_list[i] = text.replace(var_var, var_var.replace(' ', ''), 1)
 
-        texts = TextsUtils.interactive_item(texts, texts_list)
+            pattern_var_var = r'\\ '
+            var_vars = re.findall(pattern_var_var, text)
+            for var_var in var_vars:
+                texts_list[i] = text.replace(var_var, var_var.replace(' ', ''), 1)
+
+        TextsUtils.interactive_item(texts, texts_list)
 
     @staticmethod
     def update_json(file_name, new_json, new_data):
