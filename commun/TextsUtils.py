@@ -24,3 +24,11 @@ def interactive_item(obj, texts, occurrences=None):
                 occurrences.add(1)
             else:
                 interactive_item(value, texts, occurrences)
+
+
+def convert_special_chars_to_unicode(text):
+    return text.encode('unicode_escape').decode('utf-8')
+
+
+def decode_unicode_escape(text):
+    return text.encode('utf-8').decode('unicode_escape')
