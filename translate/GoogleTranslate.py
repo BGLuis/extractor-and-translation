@@ -12,6 +12,18 @@ class GoogleTranslate(BaseTranslate):
         self.translate_client = GoogleTranslator(source=self.lang_source, target=self.lang_target)
 
 
+    @staticmethod
+    def treats_text(texts):
+        for i, text in enumerate(texts):
+            texts[i] = text
+
+
+    @staticmethod
+    def mistreats_text(texts):
+        for i,text in enumerate(texts):
+            texts[i] = text
+
+
     def translate_batch(self, texts):
         if texts is None:
             return None
@@ -72,6 +84,8 @@ class GoogleTranslate(BaseTranslate):
 
     def translator(self, texts):
         treated_text = TextsUtils.dictToList(texts)
+        self.treats_text(treated_text)
         translate_text = self.translate_batch(treated_text)
+        self.mistreats_text(translate_text)
         TextsUtils.interactive_item(texts, translate_text)
         return texts
