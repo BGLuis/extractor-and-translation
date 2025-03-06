@@ -79,13 +79,20 @@ def status_color(status):
     else:
         return colored_string(status, 'white')
 
-
 def show_status(threads_status):
+    ignore_counts = {}
     while True:
         clear_screen()
         all_done = True
         table = []
         for status in threads_status:
+            if status['status'] == 'ignore':
+                file = status['file']
+                if file not in ignore_counts:
+                    ignore_counts[file] = 0
+                ignore_counts[file] += 1
+                if ignore_counts[file] > 4:
+                    continue
             table.append([status['file'], status_color(status['status']), status['msg']])
             if status['status'] not in ['erro', 'success', 'ignore']:
                 all_done = False
