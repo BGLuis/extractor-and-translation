@@ -69,6 +69,32 @@ class BaseExtractor(ABC):
     def fix_text_translate(text):
         pass
 
+    @staticmethod
+    def merge_dicts_texts(dict1, dict2):
+        merged_dict = dict2.copy()
+        haystack = dict1.items() if isinstance(dict1, dict) else enumerate(dict1)
+        for key, value in haystack:
+            if isinstance(value, str):
+                if key in merged_dict and merged_dict[key] != value:
+                    merged_dict[f"{key}_old"] = merged_dict[key]
+                    # merged_dict[f"{key}_old_char_count"] = len(merged_dict[key])
+                merged_dict[key] = value
+            elif isinstance(value, dict):
+                merged_dict[key] = BaseExtractor.merge_dicts_texts(value, merged_dict[key])
+            elif isinstance(value, list):
+                for i, item in enumerate(value):
+                    if isinstance(item, dict) or isinstance(item, list):
+                        merged_dict[key][i] = BaseExtractor.merge_dicts_texts(value[i], merged_dict[key][i])
+                    else:
+                        if key in merged_dict and merged_dict[key][i] != item:
+                            if f"{key}_old" not in merged_dict:
+                                merged_dict[f"{key}_old"] = []
+                                merged_dict[f"{key}_old_char_count"] = []
+                            merged_dict[f"{key}_old"].append(merged_dict[key][i])
+                            # merged_dict[f"{key}_old_char_count"].append(len(merged_dict[key][i]))
+                        merged_dict[key][i] = item
+        return merged_dict
+
 
     def add_threads_status(self, status):
         for i, s in enumerate(self.threads_status):
@@ -82,17 +108,20 @@ class BaseExtractor(ABC):
             translate = copy.deepcopy(self.translate)
             for attempt in range(retries):
                 try:
-                    data = self.extract_files(file)
-                    temp = self.extract_text(data[0], data[1])
+                    file_name, data = self.extract_files(file)
+                    temp = self.extract_text(file_name, data)
                     if temp:
+                        old = copy.deepcopy(temp)
                         self.add_threads_status({'file': file, 'status': 'process', 'msg': "Processing file"})
-                        temp = translate.translator(temp)
-                        self.import_file(data[0], temp, self.folderProcess)
+                        translate.translator(temp)
+                        merge = self.merge_dicts_texts(temp, old)
+
+                        self.import_file(file_name, merge, self.folderProcess)
                         self.add_threads_status({'file': file, 'status': 'success', 'msg': "Processed successfully"})
                     else:
                         self.add_threads_status(
                             {'file': file, 'status': 'ignore', 'msg': "No text to process"})
-                        self.import_file(data[0], data[1], self.folderOutput)
+                        self.import_file(file_name, data, self.folderOutput)
 
                     return
                 except Exception as e:
