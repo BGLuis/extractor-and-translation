@@ -49,6 +49,15 @@ class BaseTranslate(ABC):
     def list_lang(self):
         return self.translate_client.get_supported_languages()
 
+    def change_language(self, lang_source, lang_target):
+        self.lang_source = lang_source
+        self.lang_target = lang_target
+
+        self.translate_client.target = self.lang_target
+        self.translate_client.source = self.lang_source
+        BaseTranslate.cache_path = f'{BaseTranslate.cache_path_base}/{self.agent}/cache_{self.lang_source}_{self.lang_target}.json'
+        BaseTranslate.init_cache(self.cache_path)
+
     @staticmethod
     def init_cache(cache_path):
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)

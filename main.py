@@ -53,8 +53,7 @@ if __name__ == '__main__':
     remove_lang_options(lang_source)
     lang_target = cli.select_opition("Selecione o idioma de destino:", lang_options)
 
-    translate.lang_source = lang_source
-    translate.lang_target = lang_target
+    translate.change_language(lang_source, lang_target)
 
     extractor = extractor(translate)
     extractor.init_folder()
