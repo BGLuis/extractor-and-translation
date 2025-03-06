@@ -14,3 +14,7 @@
 - [x] Verificar o texto depois de traduzir
 - [x] Separa o cache por agente
 - [x] Criar Commun
+- [x] Espassamento desnessesario
+- [ ] Quebra de linha
+- [x] Bug CLI quando tem muitos arquivos(testado com 326)
+- [ ] Estrair RPGMaker code 320
