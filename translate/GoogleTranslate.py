@@ -24,13 +24,13 @@ class GoogleTranslate(BaseTranslate):
         for i, text in enumerate(texts):
             if text is None:
                 none_indices.append(i)
-            elif isinstance(text, str) and text in GoogleTranslate.cache:
-                translated_texts[i] = GoogleTranslate.cache[text]
+            elif isinstance(text, str) and text in self.cache:
+                translated_texts[i] = self.cache[text]
                 cache_indices.append(i)
             else:
                 non_cached_indices.append(i)
 
-        non_cached_texts = [text for text in texts if isinstance(text, str) and text not in GoogleTranslate.cache]
+        non_cached_texts = [text for text in texts if isinstance(text, str) and text not in self.cache]
 
         if non_cached_texts:
             batches = []
@@ -38,7 +38,7 @@ class GoogleTranslate(BaseTranslate):
             current_length = 0
 
             for text in non_cached_texts:
-                if current_length + len(text) > GoogleTranslate.char_limit:
+                if current_length + len(text) > self.char_limit:
                     batches.append(current_batch)
                     current_batch = []
                     current_length = 0
@@ -60,7 +60,7 @@ class GoogleTranslate(BaseTranslate):
                 if translated_texts[i] is None and non_cached_index < len(translated_non_cached_texts):
                     translated_texts[i] = translated_non_cached_texts[non_cached_index]
                     if isinstance(texts[non_cached_indices[non_cached_index]], str):
-                        GoogleTranslate.cache[texts[non_cached_indices[non_cached_index]]] = translated_non_cached_texts[
+                        self.cache[texts[non_cached_indices[non_cached_index]]] = translated_non_cached_texts[
                             non_cached_index]
                     non_cached_index += 1
 
