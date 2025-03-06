@@ -8,7 +8,7 @@ class BaseTranslate(ABC):
     cache = {}
     cache_path = ''
     delimiter = '\n<span> </span>\n'
-    char_limit = 1000 # era pra ser 5000
+    char_limit = 5000
     CHAR_LIMIT_MIN = 1000
     CHAR_LIMIT_DECREMENT = 1000
     lang_source = 'en'
@@ -42,8 +42,8 @@ class BaseTranslate(ABC):
 
 
     def reduce_limite(self):
-        if self.char_limit > BaseTranslate.CHAR_LIMIT_MIN:
-            self.char_limit -= BaseTranslate.CHAR_LIMIT_DECREMENT
+        if self.char_limit > self.CHAR_LIMIT_MIN:
+            self.char_limit -= self.CHAR_LIMIT_DECREMENT
             return True
 
     def list_lang(self):
