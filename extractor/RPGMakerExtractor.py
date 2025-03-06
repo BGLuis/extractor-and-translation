@@ -1,3 +1,5 @@
+import json
+import os
 from extractor.BaseExtractor import BaseExtractor
 import commun.TextsUtils as TextsUtils
 import re
@@ -5,8 +7,17 @@ import re
 
 class RPGMakerExtractor(BaseExtractor):
     name = 'RPG Maker'
+    pattern_code_355 = re.compile(re.escape(' \"') + '.*?' + re.escape('\"'))
     def __init__(self, translate):
         super().__init__(translate)
+
+    @staticmethod
+    def extract_files(file_path):
+        if not file_path.endswith('.json'):
+            return [os.path.basename(file_path), None]
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return [os.path.basename(file_path), data]
 
     @staticmethod
     def extract_text(file_name, new_json):
@@ -25,6 +36,14 @@ class RPGMakerExtractor(BaseExtractor):
 
                         elif list_item['code'] == 102:
                             text_obj['text'] = list_item['parameters'][0]
+
+                        elif list_item['code'] == 355:
+                            if (list_item['parameters'][0].startswith("$gameVariables.setValue") or list_item['parameters'][0].startswith("BattleManager._logWindow.push('addText'")) and RPGMakerExtractor.pattern_code_355.search(list_item['parameters'][0]):
+                                find = RPGMakerExtractor.pattern_code_355.findall(list_item['parameters'][0])[0]
+                                if find:
+                                    text_obj['text'] = find
+                        elif list_item['code'] == 320:
+                            text_obj['text'] = list_item['parameters'][1]
 
                         if len(text_obj['text']) > 0:
                             page_obj['list'].append(text_obj)
@@ -50,6 +69,14 @@ class RPGMakerExtractor(BaseExtractor):
                             list_obj['text'] = iten['parameters']
                         elif iten['code'] == 102:
                             list_obj['text'] = iten['parameters'][0]
+                        elif iten['code'] == 355:
+                            if (iten['parameters'][0].startswith("$gameVariables.setValue") or iten['parameters'][0].startswith("BattleManager._logWindow.push('addText'")) and RPGMakerExtractor.pattern_code_355.search(iten['parameters'][0]):
+                                find = RPGMakerExtractor.pattern_code_355.findall(iten['parameters'][0])[0]
+                                if find:
+                                    list_obj['text'] = find
+                        elif iten['code'] == 320:
+                            list_obj['text'] = iten['parameters'][1]
+
                         if len(list_obj['text']) > 0:
                             event['list'].append(list_obj)
                     if len(event['list']) > 0:
@@ -86,8 +113,11 @@ class RPGMakerExtractor(BaseExtractor):
 
         patterns = [
             (r'\\ ', lambda m: m.group(0).replace(' ', '')),
-            (r'\b[a-zA-Z]{1,2} \[', lambda m: m.group(0).replace(' ', '')),
+            (r'\b[a-zA-Z]{1,2} [\[\(]', lambda m: m.group(0).replace(' ', '').lower()),
             (r'(?i)\bif \(', lambda m: m.group(0).replace(' ', '').lower()),
+            (r'\b \-\b', lambda m: m.group(0).replace(' ', '')),
+            (r'\" \"', lambda m: m.group(0).replace('\" \"', '\"')),
+            (r'\\n ', lambda m: m.group(0).replace(' ', '')),
         ]
 
         for i,text in enumerate(texts_list):
@@ -109,6 +139,13 @@ class RPGMakerExtractor(BaseExtractor):
                             value['parameters'] = c['text']
                         elif value['code'] == 102:
                             value['parameters'][0] = c['text']
+                        elif value['code'] == 355:
+                            if value['parameters'][0].startswith("$gameVariables.setValue") or value['parameters'][0].startswith("BattleManager._logWindow.push('addText'"):
+                                find = RPGMakerExtractor.pattern_code_355.findall(value['parameters'][0])[0]
+                                if find:
+                                    value['parameters'][0] = re.sub(RPGMakerExtractor.pattern_code_355, c['text'], value['parameters'][0])
+                        elif value['code'] == 320:
+                            value['parameters'][1] = c['text']
 
                         new_json['events'][texts['id']]['pages'][b['id']]['list'][c['id']] = value
 
@@ -120,6 +157,13 @@ class RPGMakerExtractor(BaseExtractor):
                         value['parameters'] = a['text']
                     elif value['code'] == 102:
                         value['parameters'][0] = a['text']
+                    elif value['code'] == 355:
+                        if value['parameters'][0].startswith("$gameVariables.setValue") or value['parameters'][0].startswith("BattleManager._logWindow.push('addText'"):
+                            find = RPGMakerExtractor.pattern_code_355.findall(value['parameters'][0])[0]
+                            if find:
+                                value['parameters'][0] = re.sub(RPGMakerExtractor.pattern_code_355, a['text'],value['parameters'][0])
+                    elif value['code'] == 320:
+                        value['parameters'][1] = a['text']
 
                     new_json[texts['id']]['list'][a['id']] = value
 
