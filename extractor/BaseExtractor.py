@@ -14,25 +14,24 @@ class BaseExtractor(ABC):
     folderInput = 'input'
     folderOutput = 'output'
     threads = []
+    files_types = []
 
     def __init__(self, translate):
-        self.create_directory_if_not_exists(self.folderProcess)
-        self.create_directory_if_not_exists(self.folderInput)
-        self.create_directory_if_not_exists(self.folderOutput)
+        self.create_directory_if_not_exists(self.__class__.folderProcess)
+        self.create_directory_if_not_exists(self.__class__.folderInput)
+        self.create_directory_if_not_exists(self.__class__.folderOutput)
         self.translate = translate
         self.threads_status = []
         self.semaphore = threading.Semaphore(translate.MAX_REQUESTS_SIMULTANEOUSLY)
-
 
     @staticmethod
     def create_directory_if_not_exists(directory):
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-
     @staticmethod
     def clean_folder(folder):
-        for file in glob.glob(folder+'/*'):
+        for file in glob.glob(folder + '/*'):
             os.remove(file)
 
     @classmethod
@@ -42,7 +41,6 @@ class BaseExtractor(ABC):
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
             return [os.path.basename(file_path), data]
-
 
     @staticmethod
     def init_folder():
@@ -63,7 +61,6 @@ class BaseExtractor(ABC):
     def import_file(file_name, json_data, folder):
         with open(os.path.join(folder, file_name), 'w', encoding='utf-8') as f:
             f.write(json.dumps(json_data, ensure_ascii=False, indent=4))
-
 
     @staticmethod
     @abstractmethod
@@ -96,13 +93,11 @@ class BaseExtractor(ABC):
                         merged_dict[key][i] = item
         return merged_dict
 
-
     def add_threads_status(self, status):
         for i, s in enumerate(self.threads_status):
             if s['file'] == status['file']:
                 self.threads_status.remove(s)
         self.threads_status.append(status)
-
 
     def process_file(self, file, retries=6, delay=20):
         with self.semaphore:
@@ -137,19 +132,17 @@ class BaseExtractor(ABC):
                         self.add_threads_status(
                             {'file': file, 'status': 'erro', 'msg': f"Failed to process after {retries}"})
 
-
     def process_files(self):
-        for file in glob.glob(self.folderInput + '/*'):
+        for file in glob.glob(self.__class__.folderInput + '/*'):
             thread = threading.Thread(target=self.process_file, args=(file,))
             self.threads.append(thread)
             thread.start()
-
 
     def import_files(self):
         for thread in self.threads:
             thread.join()
 
-        for file in glob.glob(self.folderProcess + '/*'):
+        for file in glob.glob(self.__class__.folderProcess + '/*'):
             file_name = os.path.basename(file)
             input_file = os.path.join(BaseExtractor.folderInput, file_name)
             if os.path.exists(input_file):

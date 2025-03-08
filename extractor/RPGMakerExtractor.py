@@ -7,6 +7,7 @@ import re
 
 class RPGMakerExtractor(BaseExtractor):
     name = 'RPG Maker'
+    files_types = ['json', 'rvdata2']
     pattern_code_355 = re.compile(re.escape(' \"') + '.*?' + re.escape('\"'))
     def __init__(self, translate):
         super().__init__(translate)
