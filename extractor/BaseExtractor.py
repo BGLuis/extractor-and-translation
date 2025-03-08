@@ -35,9 +35,10 @@ class BaseExtractor(ABC):
         for file in glob.glob(folder+'/*'):
             os.remove(file)
 
-
-    @staticmethod
-    def extract_files(file_path):
+    @classmethod
+    def extract_files(cls, file_path):
+        if not file_path.endswith(tuple(cls.files_types)):
+            return [os.path.basename(file_path), None]
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
             return [os.path.basename(file_path), data]
