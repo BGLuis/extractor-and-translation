@@ -13,16 +13,31 @@ class RPGMakerExtractor(BaseExtractor):
         super().__init__(translate)
 
     @staticmethod
-    def extract_files(file_path):
-        if not file_path.endswith('.json'):
-            return [os.path.basename(file_path), None]
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return [os.path.basename(file_path), data]
-
-    @staticmethod
     def extract_text(file_name, new_json):
         text = []
+
+        def extract_text_from_item(iten, i):
+            list_obj = {"id": i, "text": []}
+            if iten['code'] == 401:
+                list_obj['text'] = iten['parameters']
+            elif iten['code'] == 102:
+                list_obj['text'] = iten['parameters'][0]
+            elif iten['code'] == 355:
+                if (iten['parameters'][0].startswith("$gameVariables.setValue") or iten['parameters'][0].startswith(
+                        "BattleManager._logWindow.push('addText'")) and RPGMakerExtractor.pattern_code_355.search(
+                        iten['parameters'][0]):
+                    find = RPGMakerExtractor.pattern_code_355.findall(iten['parameters'][0])[0]
+                    if find:
+                        list_obj['text'] = find
+            elif iten['code'] == 320:
+                list_obj['text'] = iten['parameters'][1]
+            elif iten['code'] == 655 and re.search(r'\d_t=\d{2,}_subject=', iten['parameters'][0]):
+                list_obj['text'] = iten['parameters'][0][1:-1].split('_subject=')[1]
+            elif iten['code'] == 122 and iten['parameters'][4] and isinstance(iten['parameters'][4], str):
+                list_obj['text'] = iten['parameters'][4][1:-1]
+            elif iten['code'] == 356 and iten['parameters'][0].startswith("D_TEXT "):
+                list_obj['text'] = iten['parameters'][0].split('D_TEXT ')[1]
+            return list_obj
 
         def extract_event_text(item):
             if item:
@@ -30,28 +45,11 @@ class RPGMakerExtractor(BaseExtractor):
                 for i, page in enumerate(item['pages']):
                     page_obj = {"id": i, "list": []}
                     for j, list_item in enumerate(page['list']):
-                        text_obj = {"id": j, "text": []}
-
-                        if list_item['code'] == 401:
-                            text_obj['text'] = list_item['parameters']
-
-                        elif list_item['code'] == 102:
-                            text_obj['text'] = list_item['parameters'][0]
-
-                        elif list_item['code'] == 355:
-                            if (list_item['parameters'][0].startswith("$gameVariables.setValue") or list_item['parameters'][0].startswith("BattleManager._logWindow.push('addText'")) and RPGMakerExtractor.pattern_code_355.search(list_item['parameters'][0]):
-                                find = RPGMakerExtractor.pattern_code_355.findall(list_item['parameters'][0])[0]
-                                if find:
-                                    text_obj['text'] = find
-                        elif list_item['code'] == 320:
-                            text_obj['text'] = list_item['parameters'][1]
-
+                        text_obj = extract_text_from_item(list_item, j)
                         if len(text_obj['text']) > 0:
                             page_obj['list'].append(text_obj)
-
                     if len(page_obj['list']) > 0:
                         event['pages'].append(page_obj)
-
                 if len(event['pages']) > 0:
                     text.append(event)
 
@@ -65,19 +63,7 @@ class RPGMakerExtractor(BaseExtractor):
                 if item:
                     event = {"id": item['id'], 'list': []}
                     for i, iten in enumerate(item['list']):
-                        list_obj = {"id": i, "text": []}
-                        if iten['code'] == 401:
-                            list_obj['text'] = iten['parameters']
-                        elif iten['code'] == 102:
-                            list_obj['text'] = iten['parameters'][0]
-                        elif iten['code'] == 355:
-                            if (iten['parameters'][0].startswith("$gameVariables.setValue") or iten['parameters'][0].startswith("BattleManager._logWindow.push('addText'")) and RPGMakerExtractor.pattern_code_355.search(iten['parameters'][0]):
-                                find = RPGMakerExtractor.pattern_code_355.findall(iten['parameters'][0])[0]
-                                if find:
-                                    list_obj['text'] = find
-                        elif iten['code'] == 320:
-                            list_obj['text'] = iten['parameters'][1]
-
+                        list_obj = extract_text_from_item(iten, i)
                         if len(list_obj['text']) > 0:
                             event['list'].append(list_obj)
                     if len(event['list']) > 0:
@@ -130,43 +116,53 @@ class RPGMakerExtractor(BaseExtractor):
 
     @staticmethod
     def update_json(file_name, new_json, new_data):
-        if re.search(r'Map\d{3,}', file_name):
+        if re.search(r'Map\d{3,}', file_name) or file_name == 'CommonEvents.json' or file_name == 'Troops.json':
             for texts in new_data:
-                for b in texts['pages']:
+                pages = [texts]
+                if 'pages' in texts:
+                    pages = texts['pages']
+                for b in pages:
                     for c in b['list']:
-                        value = new_json['events'][texts['id']]['pages'][b['id']]['list'][c['id']]
+                        if  re.search(r'Map\d{3,}', file_name):
+                            value = new_json['events'][texts['id']]['pages'][b['id']]['list'][c['id']]
+                        elif file_name == 'Troops.json':
+                            value = new_json[texts['id']]['pages'][b['id']]['list'][c['id']]
+                        else:
+                            value = new_json[texts['id']]['list'][c['id']]
 
                         if value['code'] == 401:
                             value['parameters'] = c['text']
+
                         elif value['code'] == 102:
                             value['parameters'][0] = c['text']
+
                         elif value['code'] == 355:
-                            if value['parameters'][0].startswith("$gameVariables.setValue") or value['parameters'][0].startswith("BattleManager._logWindow.push('addText'"):
+                            if (value['parameters'][0].startswith("$gameVariables.setValue") or value['parameters'][0].startswith("BattleManager._logWindow.push('addText'")) and RPGMakerExtractor.pattern_code_355.search(value['parameters'][0]):
                                 find = RPGMakerExtractor.pattern_code_355.findall(value['parameters'][0])[0]
                                 if find:
                                     value['parameters'][0] = re.sub(RPGMakerExtractor.pattern_code_355, c['text'], value['parameters'][0])
+
+                        elif value['code'] == 655 and re.search(r'\d_t=\d{2,}_subject=', value['parameters'][0]):
+                            text = value['parameters'][0].split('_subject=')
+                            text[1] = c['text']+"\""
+                            value['parameters'][0] = '_subject='.join(text)
+
                         elif value['code'] == 320:
                             value['parameters'][1] = c['text']
 
-                        new_json['events'][texts['id']]['pages'][b['id']]['list'][c['id']] = value
+                        elif value['code'] == 122 and value['parameters'][4] and isinstance(value['parameters'][4], str):
+                            value['parameters'][4] = f"\"{c['text']}\""
 
-        elif file_name == 'CommonEvents.json':
-            for texts in new_data:
-                for i, a in enumerate(texts['list']):
-                    value = new_json[texts['id']]['list'][a['id']]
-                    if value['code'] == 401:
-                        value['parameters'] = a['text']
-                    elif value['code'] == 102:
-                        value['parameters'][0] = a['text']
-                    elif value['code'] == 355:
-                        if value['parameters'][0].startswith("$gameVariables.setValue") or value['parameters'][0].startswith("BattleManager._logWindow.push('addText'"):
-                            find = RPGMakerExtractor.pattern_code_355.findall(value['parameters'][0])[0]
-                            if find:
-                                value['parameters'][0] = re.sub(RPGMakerExtractor.pattern_code_355, a['text'],value['parameters'][0])
-                    elif value['code'] == 320:
-                        value['parameters'][1] = a['text']
+                        elif value['code'] == 356 and value['parameters'][0].startswith("D_TEXT "):
+                            value['parameters'][0] = f"D_TEXT {c['text']}"
 
-                    new_json[texts['id']]['list'][a['id']] = value
+                        if  re.search(r'Map\d{3,}', file_name):
+                            new_json['events'][texts['id']]['pages'][b['id']]['list'][c['id']] = value
+                        elif file_name == 'Troops.json':
+                            new_json[texts['id']]['pages'][b['id']]['list'][c['id']] = value
+                        else:
+                            new_json[texts['id']]['list'][c['id']] = value
+
 
         elif file_name == "System.json":
             new_json['armorTypes'] = new_data[0]['armorTypes']
@@ -175,19 +171,6 @@ class RPGMakerExtractor(BaseExtractor):
             new_json['skillTypes'] = new_data[3]['skillTypes']
             new_json['terms'] = new_data[4]['terms']
             new_json['terms']['messages'] = new_data[4]['terms']['messages']
-
-        elif file_name == "Troops.json":
-            for texts in new_data:
-                for b in texts['pages']:
-                    for c in b['list']:
-                        value = new_json[texts['id']]['pages'][b['id']]['list'][c['id']]
-
-                        if value['code'] == 401:
-                            value['parameters'] = c['text']
-                        elif value['code'] == 102:
-                            value['parameters'][0] = c['text']
-
-                        new_json[texts['id']]['pages'][b['id']]['list'][c['id']] = value
 
 
         elif file_name in ["MapInfos.json", "Weapons.json", "Items.json", "Skills.json", "States.json", "Enemies.json",
