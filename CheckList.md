@@ -16,5 +16,7 @@
 - [x] Criar Commun
 - [x] Espassamento desnessesario
 - [ ] Quebra de linha
-- [x] Bug CLI quando tem muitos arquivos(testado com 326)
-- [ ] Estrair RPGMaker code 320
+- [x] Bug CLI quando tem muitos arquivos(testado com 944)
+- [x] Estrair RPGMaker code 320
+- [x] Estrair RPGMaker code 356
+- [ ] Leitura de arquivos rvdata2
