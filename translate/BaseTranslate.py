@@ -16,14 +16,14 @@ class BaseTranslate(ABC):
     cache_path_base = 'cache'
     MAX_REQUESTS_SIMULTANEOUSLY = 99
 
-    def __init__(self, agent, delimiter=None, char_limit=None,lang_source=None, lang_target=None):
-        self.delimiter = delimiter if delimiter else BaseTranslate.delimiter
-        self.char_limit = char_limit if char_limit else BaseTranslate.char_limit
-        self.lang_source = lang_source if lang_source else BaseTranslate.lang_source
-        self.lang_target = lang_target if lang_target else BaseTranslate.lang_target
+    def __init__(self, delimiter=None, char_limit=None,lang_source=None, lang_target=None):
+        self.delimiter = delimiter if delimiter else self.__class__.delimiter
+        self.char_limit = char_limit if char_limit else self.__class__.char_limit
+        self.__class__.lang_source = lang_source if lang_source else self.__class__.lang_source
+        self.__class__.lang_target = lang_target if lang_target else self.__class__.lang_target
         self.translate_client = None
-        BaseTranslate.cache_path = f'{BaseTranslate.cache_path_base}/{agent}/cache_{self.lang_source}_{self.lang_target}.json'
-        BaseTranslate.init_cache(self.cache_path)
+        self.__class__.cache_path = f'{self.__class__.cache_path_base}/{self.__class__.agent}/cache_{self.__class__.lang_source}_{self.__class__.lang_target}.json'
+        self.__class__.init_cache()
 
 
     @classmethod
@@ -42,8 +42,8 @@ class BaseTranslate(ABC):
 
 
     def reduce_limite(self):
-        if self.char_limit > self.CHAR_LIMIT_MIN:
-            self.char_limit -= self.CHAR_LIMIT_DECREMENT
+        if self.char_limit > self.__class__.CHAR_LIMIT_MIN:
+            self.char_limit -= self.__class__.CHAR_LIMIT_DECREMENT
             return True
 
     def list_lang(self):
@@ -55,30 +55,30 @@ class BaseTranslate(ABC):
 
         self.translate_client.target = self.lang_target
         self.translate_client.source = self.lang_source
-        BaseTranslate.cache_path = f'{BaseTranslate.cache_path_base}/{self.agent}/cache_{self.lang_source}_{self.lang_target}.json'
-        BaseTranslate.init_cache(self.cache_path)
+        self.__class__.cache_path = f'{self.__class__.cache_path_base}/{self.__class__.agent}/cache_{self.lang_source}_{self.lang_target}.json'
+        self.init_cache()
 
-    @staticmethod
-    def init_cache(cache_path):
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    @classmethod
+    def init_cache(cls):
+        os.makedirs(os.path.dirname(cls.cache_path), exist_ok=True)
 
-        if not os.path.exists(cache_path):
-            with open(cache_path, 'w', encoding='utf-8') as f:
-                json.dump({"": ""}, f, ensure_ascii=False, indent=4)
+        if not os.path.exists(cls.cache_path):
+            with open(cls.cache_path, 'w', encoding='utf-8') as f:
+                f.write(json.dumps({"": ""}, ensure_ascii=False, indent=4))
 
-        with open(cache_path, 'r', encoding='utf-8') as f:
-            BaseTranslate.cache = json.load(f)
+        if not cls.cache:
+            with open(cls.cache_path, 'r', encoding='utf-8') as f:
+                cls.cache = json.load(f)
 
-
-    @staticmethod
-    def save_cache():
-        if os.path.exists(BaseTranslate.cache_path):
-            with open(BaseTranslate.cache_path, 'r', encoding='utf-8') as f:
+    @classmethod
+    def save_cache(cls):
+        if os.path.exists(cls.cache_path):
+            with open(cls.cache_path, 'r', encoding='utf-8') as f:
                 file_cache = json.load(f)
 
-            file_cache.update(BaseTranslate.cache)
+            file_cache.update(cls.cache)
 
-            with open(BaseTranslate.cache_path, 'w', encoding='utf-8') as f:
+            with open(cls.cache_path, 'w', encoding='utf-8') as f:
                 f.write(json.dumps(file_cache, ensure_ascii=False, indent=4))
 
 
