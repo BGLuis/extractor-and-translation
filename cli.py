@@ -93,6 +93,14 @@ def show_status(threads_status):
                 ignore_counts[file] += 1
                 if ignore_counts[file] > 4:
                     continue
+
+            if status['status'] == 'success':
+                file = status['file']
+                if file not in ignore_counts:
+                    ignore_counts[file] = 0
+                ignore_counts[file] += 1
+                if ignore_counts[file] > 10:
+                    continue
             table.append([status['file'], status_color(status['status']), status['msg']])
             if status['status'] not in ['erro', 'success', 'ignore']:
                 all_done = False
