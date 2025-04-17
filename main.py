@@ -41,7 +41,8 @@ def remove_lang_options(lang_source):
         if lang_options[key] == lang_source:
             lang_options.pop(key)
             break
-    lang_options.pop('automatico')
+    if lang_source != 'auto':
+        lang_options.pop('automatico')
 
 
 if __name__ == '__main__':
@@ -55,6 +56,7 @@ if __name__ == '__main__':
 
     translate.change_language(lang_source, lang_target)
 
+    cli.clear_screen()
     extractor = extractor(translate)
     extractor.init_folder()
 
