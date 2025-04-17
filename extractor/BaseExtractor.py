@@ -6,6 +6,7 @@ import glob
 import json
 import os
 import time
+import logging
 
 logging.basicConfig(filename='error.log', level=logging.ERROR,
                     format='%(asctime)s %(levelname)s:%(message)s')
@@ -40,7 +41,7 @@ class BaseExtractor(ABC):
     def extract_files(cls, file_path):
         if not file_path.endswith(tuple(cls.files_types)):
             return [os.path.basename(file_path), None]
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
             data = json.load(f)
             return [os.path.basename(file_path), data]
 
@@ -61,7 +62,7 @@ class BaseExtractor(ABC):
 
     @staticmethod
     def import_file(file_name, json_data, folder):
-        with open(os.path.join(folder, file_name), 'w', encoding='utf-8') as f:
+        with open(os.path.join(folder, file_name), 'w', encoding='utf-8-sig') as f:
             f.write(json.dumps(json_data, ensure_ascii=False, indent=4))
 
     @staticmethod
@@ -123,6 +124,7 @@ class BaseExtractor(ABC):
 
                     return
                 except Exception as e:
+                    logging.error(f"Error processing file {file}: {e}")
                     self.add_threads_status(
                         {'file': file, 'status': 'danger', 'msg': f"Error processing file {file}"})
                     if attempt < retries - 1:
