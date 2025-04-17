@@ -50,7 +50,8 @@ class GoogleTranslate(BaseTranslate):
             current_length = 0
 
             for text in non_cached_texts:
-                text_limiter = text + self.delimiter
+                text_unicode = TextsUtils.convert_special_chars_to_unicode(text)
+                text_limiter = text_unicode + self.delimiter
                 if current_length + len(text_limiter) >= self.char_limit:
                     batches.append(current_batch)
                     current_batch = []
