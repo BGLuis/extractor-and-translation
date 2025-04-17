@@ -7,6 +7,8 @@ import json
 import os
 import time
 
+logging.basicConfig(filename='error.log', level=logging.ERROR,
+                    format='%(asctime)s %(levelname)s:%(message)s')
 
 class BaseExtractor(ABC):
     name = 'BaseExtractor'
