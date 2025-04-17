@@ -56,6 +56,7 @@ class BaseTranslate(ABC):
         self.translate_client.target = self.lang_target
         self.translate_client.source = self.lang_source
         self.__class__.cache_path = f'{self.__class__.cache_path_base}/{self.__class__.agent}/cache_{self.lang_source}_{self.lang_target}.json'
+        self.__class__.cache = {}
         self.init_cache()
 
     @classmethod
