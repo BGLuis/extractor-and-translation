@@ -145,3 +145,5 @@ output/
 .idea/
 *.sublime-project
 *.sublime-workspace
+
+test/
