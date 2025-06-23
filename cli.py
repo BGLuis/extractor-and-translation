@@ -4,6 +4,7 @@ import sys
 import os
 import time
 import curses
+import keyboard
 
 # Cores ANSI para terminal normal
 ansi_colors = {
@@ -43,37 +44,64 @@ def colored_string(text, color='white'):
     return f"{color_code}{text}{ansi_colors['reset']}"
 
 def select_opition(Title, options, index=0):
-    import curses
+    if os.name == 'nt':
+        if isinstance(options, dict):
+            keys = list(options.keys())
+        else:
+            keys = options
 
-    if isinstance(options, dict):
-        keys = list(options.keys())
-    else:
-        keys = options
-
-    def menu(stdscr):
-        nonlocal index
-        curses.curs_set(0)
         while True:
-            stdscr.clear()
-            stdscr.addstr(0, 0, Title + "\n")
+            clear_screen()
+            print(Title)
             for i, key in enumerate(keys):
                 if i == index:
-                    stdscr.addstr(i + 1, 0, f"> {key}\n", curses.color_pair(1))
+                    print_colored_line(key, 'cyan')
                 else:
-                    stdscr.addstr(i + 1, 0, f"  {key}\n")
-            stdscr.refresh()
-            key_event = stdscr.getch()
-            if key_event == curses.KEY_DOWN:
-                index = (index + 1) % len(keys)
-            elif key_event == curses.KEY_UP:
-                index = (index - 1) % len(keys)
-            elif key_event in [curses.KEY_ENTER, 10, 13]:
-                if isinstance(options, dict):
-                    return options[keys[index]]
-                else:
-                    return keys[index]
-            elif key_event == 27:  # ESC
-                return "Exit"
+                    print(key)
+
+            event = keyboard.read_event()
+            if event.event_type == keyboard.KEY_DOWN:
+                if event.name == 'down':
+                    index = (index + 1) % len(keys)
+                elif event.name == 'up':
+                    index = (index - 1) % len(keys)
+                elif event.name == 'enter':
+                    if isinstance(options, dict):
+                        return options[keys[index]]
+                    else:
+                        return keys[index]
+                elif event.name == 'esc':
+                    return "Exit"
+    else:
+        if isinstance(options, dict):
+            keys = list(options.keys())
+        else:
+            keys = options
+
+        def menu(stdscr):
+            nonlocal index
+            curses.curs_set(0)
+            while True:
+                stdscr.clear()
+                stdscr.addstr(0, 0, Title + "\n")
+                for i, key in enumerate(keys):
+                    if i == index:
+                        stdscr.addstr(i + 1, 0, f"> {key}\n", curses.color_pair(1))
+                    else:
+                        stdscr.addstr(i + 1, 0, f"  {key}\n")
+                stdscr.refresh()
+                key_event = stdscr.getch()
+                if key_event == curses.KEY_DOWN:
+                    index = (index + 1) % len(keys)
+                elif key_event == curses.KEY_UP:
+                    index = (index - 1) % len(keys)
+                elif key_event in [curses.KEY_ENTER, 10, 13]:
+                    if isinstance(options, dict):
+                        return options[keys[index]]
+                    else:
+                        return keys[index]
+                elif key_event == 27:  # ESC
+                    return "Exit"
 
     def wrapper(stdscr):
         curses.start_color()
