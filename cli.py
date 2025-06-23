@@ -88,16 +88,8 @@ def instruction(description, color='green'):
     def wait_enter(stdscr):
         stdscr.clear()
         curses.use_default_colors()
-        color_map = {
-            'red': curses.COLOR_RED,
-            'green': curses.COLOR_GREEN,
-            'yellow': curses.COLOR_YELLOW,
-            'blue': curses.COLOR_BLUE,
-            'magenta': curses.COLOR_MAGENTA,
-            'cyan': curses.COLOR_CYAN,
-            'white': curses.COLOR_WHITE,
-        }
-        curses.init_pair(2, color_map.get(color, curses.COLOR_WHITE),-1)
+
+        curses.init_pair(2, curses_colors.get(color, curses.COLOR_WHITE),-1)
         stdscr.addstr(0, 0, description + "\n", curses.color_pair(2))
         stdscr.addstr(2, 0, "Pressione Enter para continuar...")
         stdscr.refresh()
