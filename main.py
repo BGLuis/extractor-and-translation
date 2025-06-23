@@ -3,7 +3,9 @@ from translate.GoogleTranslate import GoogleTranslate
 from extractor.RPGMakerExtractor import RPGMakerExtractor
 from extractor.BaseExtractor import BaseExtractor
 from translate.BaseTranslate import BaseTranslate
+import shutil
 import cli
+import os
 
 lang_options = {
     'portugues': 'pt',
@@ -44,6 +46,30 @@ def remove_lang_options(lang_source):
     if lang_source != 'auto':
         lang_options.pop('automatico')
 
+def copy_file(src, dst):
+    shutil.copy(src, dst)
+
+def copy_folder(src, dst):
+    shutil.copytree(src, dst)
+
+def delete_file_folder(pasta):
+    for arquivo in os.listdir(pasta):
+        caminho = os.path.join(pasta, arquivo)
+        if os.path.isfile(caminho):
+            os.remove(caminho)
+
+def copy_files_only(src, dst):
+    if not os.path.exists(dst):
+        os.makedirs(dst)
+
+    delete_file_folder(dst)
+
+    for item in os.listdir(src):
+        s = os.path.join(src, item)
+        d = os.path.join(dst, item)
+        if os.path.isfile(s):
+            shutil.copy2(s, d)
+
 
 if __name__ == '__main__':
     extractor = cli.select_opition("Que Tipo de extrator de Texto vc gostaria:", list_subclasses_extractor())
@@ -60,7 +86,14 @@ if __name__ == '__main__':
     extractor = extractor(translate)
     extractor.init_folder()
 
-    cli.instruction(f"Trasfira os arquivos para a pasta '{extractor.folderInput}', e pressione enter tecla para continuar")
+    # cli.instruction(f"Trasfira os arquivos para a pasta '{extractor.folderInput}', e pressione enter tecla para continuar")
+    cli.instruction(f"Precione enter para selecionar a pasta de entrada dos arquivos")
+    dir = cli.select_folder("Selecione a pasta de entrada dos arquivos")
+    if dir is None:
+        cli.print_colored_line("Nenhuma pasta selecionada. Encerrando o programa.", 'red')
+        exit(1)
+    copy_files_only(dir, dir+"-"+lang_source)
+    copy_files_only(dir, extractor.folderInput)
     extractor.process_files()
     cli.show_status(extractor.threads_status)
 
@@ -68,6 +101,7 @@ if __name__ == '__main__':
 
     cli.print_colored_line("Exportando arquivos", 'green')
     extractor.import_files()
+    copy_files_only(extractor.folderOutput, dir)
 
     translate.save_cache()
     cli.print_colored_line("Tradução finalizada \nPressione enter tecla para continuar")

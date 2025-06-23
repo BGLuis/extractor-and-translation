@@ -1,4 +1,6 @@
 from tabulate import tabulate
+from PyQt5.QtWidgets import QApplication, QFileDialog
+import sys
 import os
 import time
 import curses
@@ -142,3 +144,10 @@ def show_status(threads_status):
         if all_done:
             break
         time.sleep(1)
+
+def select_folder(title="Selecione uma pasta"):
+    app = QApplication(sys.argv)
+    folder = QFileDialog.getExistingDirectory(None, title)
+    if folder:
+        return folder
+    return None
