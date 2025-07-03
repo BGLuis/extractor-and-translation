@@ -1,6 +1,5 @@
-from datetime import datetime
-from translate.GoogleTranslate import GoogleTranslate
-from extractor.RPGMakerExtractor import RPGMakerExtractor
+from translate import *
+from extractor import *
 from extractor.BaseExtractor import BaseExtractor
 from translate.BaseTranslate import BaseTranslate
 import shutil
