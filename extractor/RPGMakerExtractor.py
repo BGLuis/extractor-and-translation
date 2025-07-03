@@ -302,6 +302,7 @@ class RPGMakerExtractor(BaseExtractor):
         text = []
         for item in new_json:
             if item:
+                object = {"id": item['id'], 'pages': []}
                 for i, page in enumerate(item['pages']):
                     page_obj = {"id": i, "list": []}
                     for j, list_item in enumerate(page['list']):
@@ -309,17 +310,18 @@ class RPGMakerExtractor(BaseExtractor):
                         if len(text_obj['text']) > 0:
                             page_obj['list'].append(text_obj)
                     if len(page_obj['list']) > 0:
-                        text.append(page_obj)
+                        object['pages'].append(page_obj)
+                if len(object['pages']) > 0:
+                    text.append(object)
         return text
 
     @staticmethod
     def insert_text_troops(new_json, new_data):
         for texts in new_data:
-            if 'pages' in texts:
-                for page in texts['pages']:
-                    for list_item in page['list']:
-                        value = new_json[texts['id']]['pages'][page['id']]['list'][list_item['id']]
-                        RPGMakerExtractor.insert_text_map_item(value, list_item)
+            for page in texts['pages']:
+                for list_item in page['list']:
+                    value = new_json[texts['id']]['pages'][page['id']]['list'][list_item['id']]
+                    RPGMakerExtractor.insert_text_map_item(value, list_item)
 
     @staticmethod
     def extarctor_text_object(new_json):
