@@ -1,7 +1,7 @@
 <div align="center">
 
   ![Python][Python.io]
-  
+
 
   [![Contributors][contributors-shield]][contributors-url]
   [![Forks][forks-shield]][forks-url]
@@ -17,7 +17,7 @@
   Tradutor de jogos
 </div>
 
-# 📖 Sobre 
+# 📖 Sobre
 Descreva o que é o seu projeto e pra que ele serve
 
 # 📋 Motivo
@@ -30,38 +30,54 @@ Instruções de como executar o seu projeto
 Certifique-se de ter o Python 3.10 instalado. Você pode baixá-lo [aqui](https://www.python.org/downloads/).
 
 ## Instalação
-1. Clone o repositório:
-	```sh
-	git clone https://github.com/bgluis/extractor-and-translation.git
-	```
-2. Navegue até o diretório do projeto:
-	```sh
-	cd extractor-and-translation
-	```
-3. Crie um ambiente virtual:
-	```sh
-	python3.10 -m venv venv
-	```
-4. Ative o ambiente virtual:
-	- No Windows:
-	  ```sh
-	  venv\Scripts\activate
-	  ```
-	- No macOS/Linux:
-	  ```sh
-	  source venv/bin/activate
-	  ```
-5. Instale as dependências:
-	```sh
-	pip install -r requirements.txt
-	```
+
+### Usando Docker (recomendado)
+1. Certifique-se de ter o [Docker](https://docs.docker.com/get-docker/) e o [docker-compose](https://docs.docker.com/compose/install/) instalados.
+2. No Linux, permita acesso ao X11 para aplicações gráficas:
+   ```sh
+   xhost +local:docker
+   ```
+3. Clone o repositório:
+   ```sh
+   git clone https://github.com/bgluis/extractor-and-translation.git
+   cd extractor-and-translation
+   ```
+4. Construa e suba o container:
+   ```sh
+   docker-compose up --build
+   ```
+5. Para abrir um terminal interativo dentro do container:
+   ```sh
+	docker-compose run --service-ports app /bin/bash
+	python main.py
+   ```
+
+### Instalação manual (sem Docker)
+1. Certifique-se de ter o Python 3.11 instalado. Você pode baixá-lo [aqui](https://www.python.org/downloads/).
+2. Crie um ambiente virtual:
+   ```sh
+   python3.11 -m venv venv
+   ```
+3. Ative o ambiente virtual:
+   - No Windows:
+     ```sh
+     venv\Scripts\activate
+     ```
+   - No macOS/Linux:
+     ```sh
+     source venv/bin/activate
+     ```
+4. Instale as dependências:
+   ```sh
+   pip install -r requirements.txt
+   ```
 
 ## Uso
 1. Execute o script principal:
-	```sh
-	python main.py
-	```
-2. Siga as instruções exibidas no terminal.
+   ```sh
+   python main.py
+   ```
+2. Siga as instruções exibidas no terminal ou na interface gráfica.
 
 Pronto! Agora você deve estar apto a usar o projeto.
 
