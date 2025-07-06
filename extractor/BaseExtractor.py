@@ -71,6 +71,15 @@ class BaseExtractor(ABC):
         pass
 
     @staticmethod
+    def remove_old_keys(obj):
+        if isinstance(obj, dict):
+            return {k: BaseExtractor.remove_old_keys(v) for k, v in obj.items() if not k.endswith('_old')}
+        elif isinstance(obj, list):
+            return [BaseExtractor.remove_old_keys(i) for i in obj]
+        else:
+            return obj
+
+    @staticmethod
     def merge_dicts_texts(dict1, dict2):
         merged_dict = dict2.copy()
         haystack = dict1.items() if isinstance(dict1, dict) else enumerate(dict1)
