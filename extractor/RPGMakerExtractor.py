@@ -23,6 +23,7 @@ class RPGMakerExtractor(BaseExtractor):
     _codes_second_element_straction = [320]
     _codes_fifth_element_straction = [122, 101]
     _codes_prefix_straction = [356]
+    _codes_fourth_element=[357]
 
     _codes_find = (
         _codes_simple_straction +
@@ -30,7 +31,8 @@ class RPGMakerExtractor(BaseExtractor):
         _codes_funtion_straction +
         _codes_second_element_straction +
         _codes_fifth_element_straction +
-        _codes_prefix_straction
+        _codes_prefix_straction +
+        _codes_fourth_element
     )
 
     _prefixes = [
@@ -183,6 +185,13 @@ class RPGMakerExtractor(BaseExtractor):
                             list_obj['text'] = find
                             break
 
+        elif iten['code'] in RPGMakerExtractor._codes_fourth_element:
+            if len(iten['parameters']) > 3 and \
+                iten['parameters'][3]:
+                if isinstance(iten['parameters'][3], dict):
+                    if 'text' in iten['parameters'][3] and not RPGMakerExtractor.ignore_text(iten['parameters'][3]['text']):
+                        list_obj['text'] = iten['parameters'][3]['text']
+
         return list_obj
 
     @staticmethod
@@ -267,6 +276,12 @@ class RPGMakerExtractor(BaseExtractor):
                     prefix_used = match.group(0)
                     iten['parameters'][0] = f'{prefix_used} {list_item["text"]}'
                     break
+
+        if iten['code'] in RPGMakerExtractor._codes_fourth_element:
+            if len(iten['parameters']) > 3 and \
+                iten['parameters'][3] and isinstance(iten['parameters'][3], dict):
+                if 'text' in iten['parameters'][3]:
+                    iten['parameters'][3]['text'] = list_item['text']
 
     @staticmethod
     def insert_text_map(new_json, new_data):
