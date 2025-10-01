@@ -38,7 +38,7 @@ class OllamaTranslate(BaseTranslate):
 
     @staticmethod
     def mistreats_text(texts):
-        for i,text in enumerate(texts):
+        for i, text in enumerate(texts):
             texts[i] = text
 
     def translate_batch(self, texts):
