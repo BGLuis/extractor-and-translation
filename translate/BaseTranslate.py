@@ -22,6 +22,7 @@ class BaseTranslate(ABC):
         self.__class__.lang_source = lang_source if lang_source else self.__class__.lang_source
         self.__class__.lang_target = lang_target if lang_target else self.__class__.lang_target
         self.translate_client = None
+        self.game_synopsis = None
         self.__class__.cache_path = f'{self.__class__.cache_path_base}/{self.__class__.agent}/cache_{self.__class__.lang_source}_{self.__class__.lang_target}.json'
         self.__class__.init_cache()
 
@@ -48,6 +49,12 @@ class BaseTranslate(ABC):
 
     def list_lang(self):
         return self.translate_client.get_supported_languages()
+
+    def set_game_synopsis(self, synopsis):
+        self.game_synopsis = synopsis.strip() if synopsis else None
+
+    def get_game_synopsis(self):
+        return self.game_synopsis
 
     def change_language(self, lang_source, lang_target):
         self.lang_source = lang_source
