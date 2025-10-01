@@ -24,7 +24,7 @@ class GoogleTranslate(BaseTranslate):
             texts[i] = text
 
 
-    def translate_batch(self, texts):
+    def translate_batch(self, texts, progress_callback=None):
         if texts is None:
             return None
 
@@ -62,8 +62,12 @@ class GoogleTranslate(BaseTranslate):
             if current_batch:
                 batches.append(current_batch)
 
+            total_batches = len(batches)
             translated_non_cached_texts = []
-            for batch in batches:
+            for batch_idx, batch in enumerate(batches, 1):
+                if progress_callback:
+                    progress_callback(batch_idx, total_batches)
+
                 list_join = self.delimiter.join(batch)
                 translate_str = self.translate_client.translate(list_join)
                 translate_list = translate_str.split(self.delimiter)
@@ -84,10 +88,10 @@ class GoogleTranslate(BaseTranslate):
         return translated_texts
 
 
-    def translator(self, texts):
+    def translator(self, texts, progress_callback=None):
         treated_text = TextsUtils.dictToList(texts)
         self.treats_text(treated_text)
-        translate_text = self.translate_batch(treated_text)
+        translate_text = self.translate_batch(treated_text, progress_callback)
         self.mistreats_text(translate_text)
         TextsUtils.interactive_item(texts, translate_text)
         return texts
