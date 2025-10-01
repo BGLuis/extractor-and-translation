@@ -20,3 +20,18 @@
 - [x] Estrair RPGMaker code 320
 - [x] Estrair RPGMaker code 356
 - [ ] Leitura de arquivos rvdata2
+- [x] Adicionar suporte a flags de linha de comando
+- [x] Implementar funcionalidade de sinopse do jogo
+  - [x] Interface CLI (--synopsis)
+  - [x] Modo interativo com prompt
+  - [x] Integração com OllamaTranslator
+- [x] Refatoração do módulo CLI
+  - [x] Eliminar código duplicado (select_opition)
+  - [x] Corrigir bug de escopo no Linux
+  - [x] Implementar importações condicionais
+  - [x] Adicionar tratamento de erros robusto (select_folder)
+  - [x] Implementar barras de progresso para tabulate
+    - [x] Função progress_bar() completa
+    - [x] Função progress_bar_simple() compacta
+    - [x] Função progress_percentage() para percentual
+    - [x] Integração com show_status()
