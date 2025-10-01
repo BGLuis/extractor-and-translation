@@ -35,3 +35,9 @@
     - [x] Função progress_bar_simple() compacta
     - [x] Função progress_percentage() para percentual
     - [x] Integração com show_status()
+  - [x] Implementar progresso baseado em batches dos tradutores
+    - [x] Adicionar callback de progresso em BaseTranslate
+    - [x] GoogleTranslate reporta progresso por batch
+    - [x] OllamaTranslate reporta progresso por texto
+    - [x] BaseExtractor passa callback para tradutores
+    - [x] show_status() exibe barras automaticamente

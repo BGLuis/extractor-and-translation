@@ -91,10 +91,10 @@ class BaseTranslate(ABC):
 
 
     @abstractmethod
-    def translate_batch(self, texts):
+    def translate_batch(self, texts, progress_callback=None):
         pass
 
 
     @abstractmethod
-    def translator(self, texts):
+    def translator(self, texts, progress_callback=None):
         pass

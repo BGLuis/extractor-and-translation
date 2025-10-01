@@ -230,7 +230,7 @@ def show_status(threads_status):
 
             if status['status'] not in ['erro', 'success', 'ignore']:
                 all_done = False
-            print(tabulate(table, headers=['File', 'Status', 'Message'], tablefmt='plain'))
+            print(tabulate(table, headers=['File', 'Status', 'Message', 'Progress'], tablefmt='plain'))
 
         if all_done:
             break

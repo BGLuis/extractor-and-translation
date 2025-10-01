@@ -41,7 +41,7 @@ class OllamaTranslate(BaseTranslate):
         for i, text in enumerate(texts):
             texts[i] = text
 
-    def translate_batch(self, texts):
+    def translate_batch(self, texts, progress_callback=None):
         if texts is None:
             return None
 
@@ -62,7 +62,10 @@ class OllamaTranslate(BaseTranslate):
         non_cached_texts = [texts[i] for i in non_cached_indices]
 
         if non_cached_texts:
-            for idx, text in zip(non_cached_indices, non_cached_texts):
+            total_texts = len(non_cached_texts)
+            for batch_idx, (idx, text) in enumerate(zip(non_cached_indices, non_cached_texts), 1):
+                if progress_callback:
+                    progress_callback(batch_idx, total_texts)
                 messages = [
                     {"role": "system", "content": self.context_function},
                     {"role": "system", "content": self.context_additional},
@@ -88,10 +91,10 @@ class OllamaTranslate(BaseTranslate):
 
         return translated_texts
 
-    def translator(self, texts):
+    def translator(self, texts, progress_callback=None):
         treated_text = TextsUtils.dictToList(texts)
         self.treats_text(treated_text)
-        translate_text = self.translate_batch(treated_text)
+        translate_text = self.translate_batch(treated_text, progress_callback)
         self.mistreats_text(translate_text)
         TextsUtils.interactive_item(texts, translate_text)
         return texts

@@ -121,7 +121,17 @@ class BaseExtractor(ABC):
                     if temp:
                         old = copy.deepcopy(temp)
                         self.add_threads_status({'file': file, 'status': 'process', 'msg': "Processing file"})
-                        translate.translator(temp)
+
+                        def progress_callback(current, total):
+                            self.add_threads_status({
+                                'file': file,
+                                'status': 'process',
+                                'current': current,
+                                'total': total,
+                                'msg': f"Translating batch {current}/{total}"
+                            })
+
+                        translate.translator(temp, progress_callback)
                         merge = self.merge_dicts_texts(temp, old)
 
                         self.import_file(file_name, merge, self.folderProcess)
