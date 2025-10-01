@@ -18,7 +18,7 @@ class OllamaTranslate(BaseTranslate):
         self.model = os.getenv('OLLAMA_MODEL')
         self.max_requests = os.getenv('OLLAMA_MAX_REQUESTS')
         if not self.model or not self.max_requests:
-            raise ValueError("As variáveis de ambiente OLLAMA_MODEL e OLLAMA_MAX_REQUESTS devem ser definidas.")
+            raise ValueError("Environment variables OLLAMA_MODEL and OLLAMA_MAX_REQUESTS must be defined.")
         self.context_language = f"Translate the text below from {self.lang_source} to {self.lang_target}:"
 
     def change_language(self, lang_source, lang_target):
