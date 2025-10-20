@@ -14,6 +14,13 @@ class RPGMakerExtractor(BaseExtractor):
     tag_extraction_pattern = re.compile(r'<.*?>*?</.*?>')
     title_extraction_pattern = re.compile(r'<([^<>]*)>|<<([^<>]*)>>')
 
+    @classmethod
+    def get_interactive_questions(cls):
+        return []
+
+    def apply_configuration(self, config):
+        pass
+
     def __init__(self, translate):
         super().__init__(translate)
 

@@ -174,20 +174,65 @@ def run_interactive_mode():
 
     translate.change_language(lang_source, lang_target)
 
-    cli.clear_screen()
-    cli.print_colored_line("\n=== SINOPSE DO JOGO (OPCIONAL) ===", 'cyan')
-    cli.print_colored_line("A sinopse ajuda a melhorar a qualidade da tradução fornecendo contexto.", 'yellow')
-    cli.print_colored_line("Digite a sinopse do jogo (ou pressione Enter para pular):\n", 'yellow')
+    translator_questions = translator.get_interactive_questions()
+    if translator_questions:
+        cli.clear_screen()
+        translator_config = {}
 
-    synopsis = input().strip()
-    if synopsis:
-        translate.set_game_synopsis(synopsis)
-        cli.print_colored_line("\n✓ Sinopse configurada com sucesso!", 'green')
-    else:
-        cli.print_colored_line("\n⚠ Traduzindo sem sinopse.", 'yellow')
+        for question in translator_questions:
+            if 'title' in question:
+                cli.print_colored_line(question['title'], 'cyan')
+
+            if 'description' in question:
+                color = question.get('color', 'yellow')
+                cli.print_colored_line(question['description'], color)
+
+            cli.print_colored_line(question['question'], question.get('color', 'white'))
+
+            answer = input().strip()
+            if answer or not question.get('required', False):
+                translator_config[question['key']] = answer
+                if answer:
+                    cli.print_colored_line(f"\n✓ {question['key'].capitalize()} configurado com sucesso!", 'green')
+                else:
+                    cli.print_colored_line(f"\n⚠ Continuando sem {question['key']}.", 'yellow')
+            else:
+                cli.print_colored_line(f"\n✗ {question['key'].capitalize()} é obrigatório!", 'red')
+                return False
+
+        translate.apply_configuration(translator_config)
 
     cli.clear_screen()
     extractor = extractor(translate)
+
+    extractor_questions = extractor.get_interactive_questions()
+    if extractor_questions:
+        cli.clear_screen()
+        extractor_config = {}
+
+        for question in extractor_questions:
+            if 'title' in question:
+                cli.print_colored_line(question['title'], 'cyan')
+
+            if 'description' in question:
+                color = question.get('color', 'yellow')
+                cli.print_colored_line(question['description'], color)
+
+            cli.print_colored_line(question['question'], question.get('color', 'white'))
+
+            answer = input().strip()
+            if answer or not question.get('required', False):
+                extractor_config[question['key']] = answer
+                if answer:
+                    cli.print_colored_line(f"\n✓ {question['key'].capitalize()} configurado com sucesso!", 'green')
+                else:
+                    cli.print_colored_line(f"\n⚠ Continuando sem {question['key']}.", 'yellow')
+            else:
+                cli.print_colored_line(f"\n✗ {question['key'].capitalize()} é obrigatório!", 'red')
+                return False
+
+        extractor.apply_configuration(extractor_config)
+
     extractor.init_folder()
 
     cli.instruction(f"Precione enter para selecionar a pasta de entrada dos arquivos")
@@ -210,7 +255,8 @@ def run_command_line_mode(args):
     translate.change_language(args.source, args.target)
 
     if args.synopsis:
-        translate.set_game_synopsis(args.synopsis)
+        config = {'synopsis': args.synopsis}
+        translate.apply_configuration(config)
         cli.print_colored_line(f"✓ Sinopse configurada", 'green')
 
     extractor = extractor_class(translate)

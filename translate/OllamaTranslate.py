@@ -13,6 +13,28 @@ class OllamaTranslate(BaseTranslate):
     context_function = 'Translate the following text. Provide only the translated text, without any additional comments, explanations, or notes.'
     context_additional = "Act as an expert game localizer. Your mission is to translate text for a video game, ensuring the translation is engaging and immersive for the player. The text below could be character dialogue, an item description, a quest objective, or a UI menu element. Adapt the translation to fit the gaming context, using appropriate and common gaming jargon. Maintain the original tone, whether it's serious, humorous, or epic. Provide only the direct translation. Do not provide a literal, word-for-word translation if a more natural, context-aware alternative exists."
 
+    @classmethod
+    def requires_synopsis(cls):
+        return True
+
+    @classmethod
+    def get_interactive_questions(cls):
+        return [
+            {
+                'key': 'synopsis',
+                'question': 'Digite a sinopse do jogo (ou pressione Enter para pular):',
+                'title': '\n=== SINOPSE DO JOGO (OPCIONAL) ===',
+                'description': 'A sinopse ajuda a melhorar significativamente a qualidade da tradução fornecendo contexto ao modelo Ollama.',
+                'color': 'yellow',
+                'required': False
+            }
+        ]
+
+    def apply_configuration(self, config):
+        """Aplica as configurações específicas do Ollama"""
+        if 'synopsis' in config and config['synopsis']:
+            self.set_game_synopsis(config['synopsis'])
+
     def __init__(self, delimiter=None, char_limit=None, lang_source=None, lang_target=None):
         super().__init__(delimiter, char_limit, lang_source, lang_target)
         self.model = os.getenv('OLLAMA_MODEL')

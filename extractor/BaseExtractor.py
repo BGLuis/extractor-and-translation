@@ -50,6 +50,13 @@ class BaseExtractor(ABC):
         BaseExtractor.clean_folder(BaseExtractor.folderProcess)
         BaseExtractor.clean_folder(BaseExtractor.folderOutput)
 
+    @classmethod
+    def get_interactive_questions(cls):
+        return []
+
+    def apply_configuration(self, config):
+        pass
+
     @staticmethod
     @abstractmethod
     def extract_text(file_name, data):
@@ -134,7 +141,8 @@ class BaseExtractor(ABC):
                         translate.translator(temp, progress_callback)
                         merge = self.merge_dicts_texts(temp, old)
 
-                        self.import_file(file_name, merge, self.folderProcess)
+                        updated_data = self.update_json(file_name, data, merge)
+                        self.import_file(file_name, updated_data, self.folderProcess)
                         self.add_threads_status({'file': file, 'status': 'success', 'msg': "Processed successfully"})
                     else:
                         self.add_threads_status(
@@ -170,7 +178,5 @@ class BaseExtractor(ABC):
             input_file = os.path.join(BaseExtractor.folderInput, file_name)
             if os.path.exists(input_file):
                 process_data = self.extract_files(file)
-                input_data = self.extract_files(input_file)
                 self.fix_text_translate(process_data[1])
-                updated_data = self.update_json(file_name, input_data[1], process_data[1])
-                self.import_file(file_name, updated_data, BaseExtractor.folderOutput)
+                self.import_file(file_name, process_data[1], BaseExtractor.folderOutput)
