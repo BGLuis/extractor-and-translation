@@ -90,6 +90,17 @@ class BaseTranslate(ABC):
                 f.write(json.dumps(file_cache, ensure_ascii=False, indent=4))
 
 
+    @classmethod
+    def requires_synopsis(cls):
+        return False
+
+    @classmethod
+    def get_interactive_questions(cls):
+        return []
+
+    def apply_configuration(self, config):
+        pass
+
     @abstractmethod
     def translate_batch(self, texts, progress_callback=None):
         pass

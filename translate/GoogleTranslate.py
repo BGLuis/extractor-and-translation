@@ -7,6 +7,17 @@ class GoogleTranslate(BaseTranslate):
     agent = 'googleTraslator'
     MAX_REQUESTS_SIMULTANEOUSLY = 9
 
+    @classmethod
+    def requires_synopsis(cls):
+        return False
+
+    @classmethod
+    def get_interactive_questions(cls):
+        return []
+
+    def apply_configuration(self, config):
+        pass
+
     def __init__(self, delimiter=None, char_limit=None, lang_source=None, lang_target=None):
         super().__init__(delimiter, char_limit, lang_source, lang_target)
         self.translate_client = GoogleTranslator(source=self.lang_source, target=self.lang_target)
