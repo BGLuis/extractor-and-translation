@@ -27,5 +27,5 @@ class JsonExtractor(BaseExtractor):
         return data
 
     @staticmethod
-    def fix_text_translate(text):
+    def fix_text_translate(text, original_text=None):
         return text

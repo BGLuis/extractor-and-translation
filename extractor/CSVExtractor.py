@@ -140,7 +140,7 @@ class CSVExtractor(BaseExtractor):
             print(f"Erro ao salvar CSV {file_name}: {e}")
 
     @staticmethod
-    def fix_text_translate(text):
+    def fix_text_translate(text, original_text=None):
         if isinstance(text, dict):
             for key, value in text.items():
                 if isinstance(value, str):
