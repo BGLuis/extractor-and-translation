@@ -26,9 +26,6 @@ class BaseExtractor(ABC):
         self.create_directory_if_not_exists(self.__class__.folderOutput)
         self.translate = translate
         self.threads_status = []
-        # Removido o semáforo: a paralelização agora é controlada internamente
-        # por translate_batch_parallel usando ThreadPoolExecutor
-        # self.semaphore = threading.Semaphore(translate.MAX_REQUESTS_SIMULTANEOUSLY)
 
     @staticmethod
     def create_directory_if_not_exists(directory):
@@ -97,7 +94,6 @@ class BaseExtractor(ABC):
             if isinstance(value, str):
                 if key in merged_dict and merged_dict[key] != value:
                     merged_dict[f"{key}_old"] = merged_dict[key]
-                    # merged_dict[f"{key}_old_char_count"] = len(merged_dict[key])
                 merged_dict[key] = value
             elif isinstance(value, dict):
                 merged_dict[key] = BaseExtractor.merge_dicts_texts(value, merged_dict[key])
@@ -109,9 +105,7 @@ class BaseExtractor(ABC):
                         if key in merged_dict and merged_dict[key][i] != item:
                             if f"{key}_old" not in merged_dict:
                                 merged_dict[f"{key}_old"] = []
-                                merged_dict[f"{key}_old_char_count"] = []
                             merged_dict[f"{key}_old"].append(merged_dict[key][i])
-                            # merged_dict[f"{key}_old_char_count"].append(len(merged_dict[key][i]))
                         merged_dict[key][i] = item
         return merged_dict
 
@@ -122,19 +116,11 @@ class BaseExtractor(ABC):
         self.threads_status.append(status)
 
     def process_file(self, file, retries=6, delay=20):
-        # Removido o bloqueio de semáforo aqui - cada arquivo processa livremente
-        # O controle de requisições simultâneas agora está dentro de translate_batch_parallel
         translate = copy.deepcopy(self.translate)
         for attempt in range(retries):
             try:
                 file_name, data = self.extract_files(file)
                 temp = self.extract_text(file_name, data)
-                # Antes de traduzir: mascarar tokens técnicos para evitar que o tradutor
-                # altere variáveis, códigos e formatações. Usamos padrões genéricos;
-                # extractors específicos podem fornecer padrões mais restritos.
-                # Selecionar padrões de mascaramento: preferir padrões fornecidos pelo
-                # extractor (método get_mask_patterns ou atributo mask_patterns).
-                # Caso contrário, usar padrões genéricos que cobrem tokens comuns.
                 if temp:
                     try:
                         if hasattr(self, 'get_mask_patterns') and callable(getattr(self, 'get_mask_patterns')):
@@ -149,7 +135,6 @@ class BaseExtractor(ABC):
                                 re.compile(r'!?(?<!\\)\b[A-Za-z]{1,2}\s*\[\s*\d+\s*\]', re.IGNORECASE),
                             ]
 
-                        # Garantir que `patterns` seja uma lista de regex compilados
                         if isinstance(patterns, (list, tuple)):
                             compiled_patterns = []
                             for p in patterns:
@@ -182,10 +167,8 @@ class BaseExtractor(ABC):
                             'msg': f"Translating batch {current}/{total}"
                         })
 
-                    # Chamar tradutor com a versão mascarada
                     translate.translator(masked_temp, progress_callback)
 
-                    # Após tradução, restaurar os tokens originais
                     try:
                         if _mask_map:
                             unmasked = TextsUtils.unmask_tokens_in_structure(masked_temp, _mask_map)
@@ -194,8 +177,6 @@ class BaseExtractor(ABC):
                     except Exception:
                         unmasked = masked_temp
 
-                    # Aplicar correções (fix_text_translate) APENAS nos dados extraídos/traduzidos
-                    # Isso evita corromper a estrutura do JSON original ou scripts não extraídos
                     try:
                         self.fix_text_translate(unmasked, old)
                     except Exception as e:
@@ -239,28 +220,15 @@ class BaseExtractor(ABC):
             file_name = os.path.basename(file)
             input_file = os.path.join(BaseExtractor.folderInput, file_name)
             if os.path.exists(input_file):
-                # Carregar dados do arquivo processado (traduzido)
                 process_data = self.extract_files(file)
 
-                # Carregar dados do arquivo original para comparação
                 original_data = self.extract_files(input_file)
                 original_json = original_data[1] if original_data[1] else None
 
-                # Log para debug
                 if original_json is None:
                     logging.warning(f"⚠️ fix_text_translate called WITHOUT original JSON for {file_name}")
 
-                # Corrigir texto traduzido usando o original JSON como referência
-                # Passamos o JSON completo (process_data[1]) e o JSON original (original_json)
-                # self.fix_text_translate(process_data[1], original_json)
-
                 self.import_file(file_name, process_data[1], BaseExtractor.folderOutput)
-
-        # Após importar todos os arquivos, aplicar sanitização final nos arquivos gerados
-        # try:
-        #    self.sanitize_output_files()
-        # except Exception as e:
-        #    logging.error(f"Error during sanitize_output_files: {e}")
 
     def sanitize_output_files(self):
         """

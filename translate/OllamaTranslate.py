@@ -31,7 +31,6 @@ class OllamaTranslate(BaseTranslate):
         ]
 
     def apply_configuration(self, config):
-        """Aplica as configurações específicas do Ollama"""
         if 'synopsis' in config and config['synopsis']:
             self.set_game_synopsis(config['synopsis'])
 
@@ -64,15 +63,6 @@ class OllamaTranslate(BaseTranslate):
             texts[i] = text
 
     def _translate_single_batch(self, texts):
-        """
-        Traduz um único batch (texto individual) usando Ollama.
-
-        Args:
-            texts: Lista com um único texto para traduzir
-
-        Returns:
-            Lista com o texto traduzido
-        """
         if not texts or len(texts) != 1:
             return texts
 
@@ -119,14 +109,10 @@ class OllamaTranslate(BaseTranslate):
         non_cached_texts = [texts[i] for i in non_cached_indices]
 
         if non_cached_texts:
-            # Criar um batch por texto para aproveitar paralelização
-            # Cada "batch" contém apenas 1 texto para Ollama processar individualmente
             batches = [[text] for text in non_cached_texts]
 
-            # Usar tradução paralela para processar todos os textos simultaneamente
             translated_results = self.translate_batch_parallel(batches, progress_callback)
 
-            # Atualizar cache e preencher translated_texts
             for idx, original_idx, result in zip(range(len(translated_results)), non_cached_indices, translated_results):
                 translated_texts[original_idx] = result
                 self.__class__.cache[texts[original_idx]] = result

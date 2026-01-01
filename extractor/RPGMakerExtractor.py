@@ -13,16 +13,11 @@ class RPGMakerExtractor(BaseExtractor):
     quote_extraction_pattern = re.compile(r"'.*?'|\".*?\"")
     tag_extraction_pattern = re.compile(r'<.*?>*?</.*?>')
     title_extraction_pattern = re.compile(r'<([^<>]*)>|<<([^<>]*)>>')
-    
-    # Padrão para extrair conteúdo seguro de notas: <Tag: Conteúdo>
-    # Captura tags comuns de plugins (Desc, Help, Message, etc)
+
     _note_tag_pattern = re.compile(fr'(<{re.escape("Desc")}|{re.escape("Help")}|{re.escape("Text")}|{re.escape("Profile")}|{re.escape("Message")}|{re.escape("Info")}[^:>]*):\s*([^>]+)>', re.IGNORECASE)
-    
-    # Padrão para condições em escolhas (Code 102)
-    # Ex: if(!s[16]) Texto
+
     _choice_condition_pattern = re.compile(r'^(?:if|show_if|hide_if|en|pt|ja|es|fr)\s*\(.*?\)\s*', re.IGNORECASE)
 
-    # Padrões regex compilados para otimização
     _variable_pattern = re.compile(r'[a-zA-Z]{1,2}\[.*?\]')
     _subject_pattern = re.compile(r'\d_t=\d{2,}_subject=')
     _fs_pattern = re.compile(r'fs\[\d+\]')
@@ -42,29 +37,21 @@ class RPGMakerExtractor(BaseExtractor):
         Retorna uma lista de padrões compilados (re.Pattern) para mascaramento
         de tokens técnicos antes da tradução.
         """
-        # códigos de formatação com barra invertida, ex: \C[3], \fs[14]
         p_format_codes = re.compile(r'\\[A-Za-z]{1,3}\s*\[[^\]]*\]', re.IGNORECASE)
 
-        # $game objects (variables, switches, etc.)
         game_keys = ['variables', 'switches', 'party', 'actors', 'player', 'map', 'system', 'screen', 'timer', 'message', 'temp', 'troop', 'interpreter']
         p_game = re.compile(r'\$game(' + '|'.join(game_keys) + r')\b', re.IGNORECASE)
 
-        # variáveis do tipo V[10], v[5], !V[3]
         p_bracket_vars = re.compile(r'!?(?<!\\)\b[A-Za-z]{1,2}\s*\[\s*\d+\s*\]', re.IGNORECASE)
 
-        # proteger condições if(...) que contenham variáveis, ex: if(!s[16])
         p_if_condition = re.compile(r'if\s*\(\s*!?\s*[A-Za-z]{1,2}\s*\[\s*\d+\s*\]\s*\)', re.IGNORECASE)
 
-        # capturar wrappers de idioma
         p_lang_wrapper = re.compile(r'\b(?:en|pt|ja|es|fr)\s*\([^)]+\)', re.IGNORECASE)
 
-        # proteger literais booleanos e null/undefined em contextos de código
         p_boolean_literals = re.compile(r'\b(?:true|false|null|undefined|NaN)\b', re.IGNORECASE)
 
-        # proteger operadores lógicos comuns
         p_operators = re.compile(r'(?:&&|\|\||>=|<=|!==|===|!=|==)')
 
-        # variáveis com $camelCase
         p_dollar_camel = re.compile(r'\$\s*[a-z]+[A-Z][a-zA-Z]*')
 
         return [p_format_codes, p_game, p_bracket_vars, p_if_condition, p_lang_wrapper, p_boolean_literals, p_operators, p_dollar_camel]
@@ -73,9 +60,9 @@ class RPGMakerExtractor(BaseExtractor):
     _codes_fist_element_straction = [102]
     _codes_funtion_straction = [355, 655]
     _codes_second_element_straction = [320]
-    _codes_fifth_element_straction = [122, 101] # 101 MZ Speaker Name is at index 4
+    _codes_fifth_element_straction = [122, 101]
     _codes_prefix_straction = [356]
-    _codes_fourth_element=[357] # MZ Plugin Command
+    _codes_fourth_element=[357]
 
     _codes_find = (
         _codes_simple_straction +
@@ -111,7 +98,7 @@ class RPGMakerExtractor(BaseExtractor):
 
     _attributes_find = [
         r'name',
-        r'note', # Habilitado com filtro regex
+        r'note',
         r'profile',
         r'description',
         r'nickname',
@@ -171,7 +158,7 @@ class RPGMakerExtractor(BaseExtractor):
     @staticmethod
     def extarctor_text_codes_item(iten, i):
         list_obj = {"id": i, "text": []}
-        
+
         if iten['code'] in RPGMakerExtractor._codes_simple_straction:
             for param in iten['parameters']:
                 if not RPGMakerExtractor.ignore_text(param):
@@ -228,15 +215,13 @@ class RPGMakerExtractor(BaseExtractor):
                 list_obj['text'] = iten['parameters'][1]
 
         elif iten['code'] in RPGMakerExtractor._codes_fifth_element_straction:
-            # MZ Code 101 (Speaker Name at index 4) or Code 122
             if len(iten['parameters']) > 4 and \
                 iten['parameters'][4] and isinstance(iten['parameters'][4], str) and \
                 not RPGMakerExtractor.ignore_text(iten['parameters'][4]) and \
                 not RPGMakerExtractor.is_string_numeric(iten['parameters'][4]) and \
                 not RPGMakerExtractor.is_string_boolean(iten['parameters'][4]) and \
-                    (iten['parameters'][4].startswith(("'", '"', '`')) or iten['code'] == 101): 
-                    # 101 Name might not be quoted in params, just a string
-                
+                    (iten['parameters'][4].startswith(("'", '"', '`')) or iten['code'] == 101):
+
                 val = iten['parameters'][4]
                 if val.startswith(("'", '"', '`')):
                      list_obj['text'] = val[1:-1]
@@ -256,18 +241,15 @@ class RPGMakerExtractor(BaseExtractor):
                             break
 
         elif iten['code'] in RPGMakerExtractor._codes_fourth_element:
-            # MZ Plugin Command (357)
             if len(iten['parameters']) > 3 and \
                 iten['parameters'][3]:
                 if isinstance(iten['parameters'][3], dict):
-                    # Generalização: Extrair qualquer valor string do objeto de parâmetros
                     extracted_params = {}
                     for p_key, p_val in iten['parameters'][3].items():
                         if isinstance(p_val, str) and not RPGMakerExtractor.ignore_text(p_val):
                             extracted_params[p_key] = p_val
-                    
+
                     if extracted_params:
-                        # Se tiver apenas uma chave 'text', mantém comportamento antigo para compatibilidade
                         if len(extracted_params) == 1 and 'text' in extracted_params:
                              list_obj['text'] = extracted_params['text']
                         else:
@@ -285,7 +267,7 @@ class RPGMakerExtractor(BaseExtractor):
                     page_obj = {"id": i, "list": []}
                     for j, list_item in enumerate(page['list']):
                         text_obj = RPGMakerExtractor.extarctor_text_codes_item(list_item, j)
-                        if text_obj.get('text') and len(text_obj['text']) > 0: # Check if text exists and is not empty
+                        if text_obj.get('text') and len(text_obj['text']) > 0:
                             page_obj['list'].append(text_obj)
                     if len(page_obj['list']) > 0:
                         event['pages'].append(page_obj)
@@ -300,24 +282,16 @@ class RPGMakerExtractor(BaseExtractor):
             texts_to_insert = list_item['text']
             if isinstance(texts_to_insert, str):
                 texts_to_insert = [texts_to_insert]
-            
-            # Ensure parameters has enough slots or matches logic
-            # 401 usually has 1 parameter.
+
             if len(iten['parameters']) == 1 and len(texts_to_insert) >= 1:
-                 # Simple replace for the standard case
                  iten_text = iten['parameters'][0]
                  new_text = texts_to_insert[0]
-                 if isinstance(new_text, list): # If it came from [title, text]
-                     new_text = new_text[1] # Use the text part
-                 
-                 # Logic to preserve Title keys if present
+                 if isinstance(new_text, list):
+                     new_text = new_text[1]
+
                  match = RPGMakerExtractor.title_extraction_pattern.search(iten_text)
                  if match:
                     origin_title = [group for group in match.groups() if group][0]
-                    # Assume the translation didn't break the title key
-                    # Reconstruct: <Title> TranslatedText
-                    # But list_item['text'] from extraction was [title, text]
-                    # If we received just text string back, simple replace
                     iten['parameters'][0] = iten_text.replace(iten_text[match.end():].strip(), str(new_text).strip())
                  elif any(iten_text.startswith(key) for key in RPGMakerExtractor._text_keys):
                     iten_text_parts = iten_text.split(":", 1)
@@ -325,10 +299,8 @@ class RPGMakerExtractor(BaseExtractor):
                         iten['parameters'][0] = iten_text_parts[0] + ": " + str(new_text)
                  else:
                     iten['parameters'][0] = str(new_text)
-            
-            # Fallback for complex matching if list_item['text'] structure matches extraction
+
             elif isinstance(texts_to_insert, list) and len(texts_to_insert) > 0:
-                 # Existing complex logic
                 for iten_text, list_item_text in zip(iten['parameters'], texts_to_insert):
                     match = RPGMakerExtractor.title_extraction_pattern.search(iten_text)
                     if match:
@@ -344,11 +316,10 @@ class RPGMakerExtractor(BaseExtractor):
             if not RPGMakerExtractor.ignore_text(iten['parameters'][0]):
                 original_list = iten['parameters'][0]
                 translated_list = list_item['text']
-                
+
                 if isinstance(translated_list, list) and len(original_list) == len(translated_list):
                     final_list = []
                     for orig, trans in zip(original_list, translated_list):
-                        # Limpar espaços do original e traduzido para garantir match limpo
                         orig_clean = orig.strip()
                         match = RPGMakerExtractor._choice_condition_pattern.match(orig_clean)
                         if match:
@@ -407,7 +378,7 @@ class RPGMakerExtractor(BaseExtractor):
             # MZ Plugin Command insertion
             if len(iten['parameters']) > 3 and \
                 iten['parameters'][3] and isinstance(iten['parameters'][3], dict):
-                
+
                 if isinstance(list_item['text'], dict):
                     # New generalized logic
                     for key, val in list_item['text'].items():
@@ -481,7 +452,7 @@ class RPGMakerExtractor(BaseExtractor):
                 for key in item.keys():
                     # Check for standard attributes
                     if any(re.match(pattern, key) for pattern in RPGMakerExtractor._attributes_find):
-                        
+
                         # Special handling for 'note' to extract only tag contents
                         if key == 'note':
                             if item[key]:
@@ -494,10 +465,10 @@ class RPGMakerExtractor(BaseExtractor):
                                         note_data[tag] = content
                                     if note_data:
                                         obj[key] = note_data
-                        
+
                         elif not RPGMakerExtractor.ignore_text(item[key]):
                             obj[key] = item[key]
-                            
+
                 if len(obj) > 1:
                     text.append(obj)
         return text
@@ -509,15 +480,15 @@ class RPGMakerExtractor(BaseExtractor):
             if 'note' in texts and isinstance(texts['note'], dict):
                 original_note = new_json[texts['id']].get('note', '')
                 translated_notes = texts['note']
-                
+
                 for tag, new_content in translated_notes.items():
                     # Replace content for specific tag: <Tag: OldContent> -> <Tag: NewContent>
                     pattern = re.compile(fr'(<{re.escape(tag)}\s*:\s*)([^>]+)(>)', re.IGNORECASE)
                     original_note = pattern.sub(lambda m: f"{m.group(1)}{new_content}{m.group(3)}", original_note)
-                
+
                 new_json[texts['id']]['note'] = original_note
                 # Remove note from texts to avoid overwriting by the generic update below if we want to be safe
-                # But the generic update below does {**new_json... **texts}. 
+                # But the generic update below does {**new_json... **texts}.
                 # We need to update 'texts' to have the FULL note string now, or remove 'note' from 'texts'.
                 # Simplest is to update 'texts' with the fully reconstructed string.
                 texts['note'] = original_note
@@ -641,7 +612,7 @@ class RPGMakerExtractor(BaseExtractor):
         )
 
         _property_pattern = re.compile(r'\.([_a-zA-Z][_a-zA-Z0-9]*)(?=[\[\(\.]|\s|$)')
-        
+
         _code_pattern = re.compile(
             r'(\$\s*game\s*[a-zA-Z]+(?:\s*\.\s*[_a-zA-Z][_a-zA-Z0-9]*(?:\s*\[\s*[^\]]+\s*\])?)*|'
             r'\$\s*[a-z]+[A-Z][a-zA-Z]*|'

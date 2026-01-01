@@ -35,15 +35,6 @@ class GoogleTranslate(BaseTranslate):
             texts[i] = text
 
     def _translate_single_batch(self, texts):
-        """
-        Traduz um único batch de textos usando Google Translate.
-
-        Args:
-            texts: Lista de strings para traduzir
-
-        Returns:
-            Lista de strings traduzidas
-        """
         if not texts:
             return []
 
@@ -75,7 +66,6 @@ class GoogleTranslate(BaseTranslate):
         non_cached_texts = [text for text in texts if isinstance(text, str) and text not in self.__class__.cache]
 
         if non_cached_texts:
-            # Agrupar textos em batches baseado no limite de caracteres
             batches = []
             current_batch = []
             current_length = 0
@@ -93,7 +83,6 @@ class GoogleTranslate(BaseTranslate):
             if current_batch:
                 batches.append(current_batch)
 
-            # Usar tradução paralela para processar todos os batches
             translated_non_cached_texts = self.translate_batch_parallel(batches, progress_callback)
 
             non_cached_index = 0
