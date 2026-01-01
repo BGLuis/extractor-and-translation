@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import os
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class BaseTranslate(ABC):
@@ -100,6 +101,67 @@ class BaseTranslate(ABC):
 
     def apply_configuration(self, config):
         pass
+
+    @abstractmethod
+    def _translate_single_batch(self, texts):
+        """
+        Traduz um único batch de textos.
+
+        Args:
+            texts: Lista de strings para traduzir
+
+        Returns:
+            Lista de strings traduzidas na mesma ordem
+        """
+        pass
+
+    def translate_batch_parallel(self, batches, progress_callback=None):
+        """
+        Executa tradução paralela de múltiplos batches usando ThreadPoolExecutor.
+
+        Args:
+            batches: Lista de batches, onde cada batch é uma lista de textos
+            progress_callback: Função opcional callback(current, total) para progresso
+
+        Returns:
+            Lista de todas as traduções concatenadas na ordem original
+        """
+        if not batches:
+            return []
+
+        # Calcular max_workers dinamicamente baseado em MAX_REQUESTS_SIMULTANEOUSLY
+        max_workers = min(self.MAX_REQUESTS_SIMULTANEOUSLY, len(batches))
+
+        translated_batches = [None] * len(batches)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submeter todos os batches para execução paralela
+            future_to_index = {
+                executor.submit(self._translate_single_batch, batch): idx
+                for idx, batch in enumerate(batches)
+            }
+
+            # Processar resultados conforme ficam prontos
+            completed = 0
+            for future in as_completed(future_to_index):
+                batch_idx = future_to_index[future]
+                try:
+                    translated_batches[batch_idx] = future.result()
+                    completed += 1
+                    if progress_callback:
+                        progress_callback(completed, len(batches))
+                except Exception as e:
+                    # Em caso de erro, manter a ordem mas logar o erro
+                    translated_batches[batch_idx] = []
+                    print(f"Error translating batch {batch_idx}: {e}")
+
+        # Concatenar todos os batches traduzidos mantendo a ordem
+        all_translations = []
+        for batch in translated_batches:
+            if batch:
+                all_translations.extend(batch)
+
+        return all_translations
 
     @abstractmethod
     def translate_batch(self, texts, progress_callback=None):

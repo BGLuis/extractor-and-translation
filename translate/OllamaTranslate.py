@@ -63,6 +63,41 @@ class OllamaTranslate(BaseTranslate):
         for i, text in enumerate(texts):
             texts[i] = text
 
+    def _translate_single_batch(self, texts):
+        """
+        Traduz um único batch (texto individual) usando Ollama.
+
+        Args:
+            texts: Lista com um único texto para traduzir
+
+        Returns:
+            Lista com o texto traduzido
+        """
+        if not texts or len(texts) != 1:
+            return texts
+
+        text = texts[0]
+
+        messages = [
+            {"role": "system", "content": self.context_function},
+            {"role": "system", "content": self.context_additional},
+        ]
+
+        if self.game_synopsis:
+            synopsis_context = f"Game Synopsis/Context: {self.game_synopsis}\n\nUse this synopsis to better understand the game's context and provide more accurate, context-aware translations."
+            messages.append({"role": "system", "content": synopsis_context})
+
+        messages.append({"role": "system", "content": self.context_language})
+        messages.append({"role": "user", "content": text})
+
+        response = ollama.chat(
+            model=self.model,
+            messages=messages
+        )
+        result = response['message']['content'].strip()
+
+        return [result]
+
     def translate_batch(self, texts, progress_callback=None):
         if texts is None:
             return None
@@ -84,29 +119,17 @@ class OllamaTranslate(BaseTranslate):
         non_cached_texts = [texts[i] for i in non_cached_indices]
 
         if non_cached_texts:
-            total_texts = len(non_cached_texts)
-            for batch_idx, (idx, text) in enumerate(zip(non_cached_indices, non_cached_texts), 1):
-                if progress_callback:
-                    progress_callback(batch_idx, total_texts)
-                messages = [
-                    {"role": "system", "content": self.context_function},
-                    {"role": "system", "content": self.context_additional},
-                ]
+            # Criar um batch por texto para aproveitar paralelização
+            # Cada "batch" contém apenas 1 texto para Ollama processar individualmente
+            batches = [[text] for text in non_cached_texts]
 
-                if self.game_synopsis:
-                    synopsis_context = f"Game Synopsis/Context: {self.game_synopsis}\n\nUse this synopsis to better understand the game's context and provide more accurate, context-aware translations."
-                    messages.append({"role": "system", "content": synopsis_context})
+            # Usar tradução paralela para processar todos os textos simultaneamente
+            translated_results = self.translate_batch_parallel(batches, progress_callback)
 
-                messages.append({"role": "system", "content": self.context_language})
-                messages.append({"role": "user", "content": text})
-
-                response = ollama.chat(
-                    model=self.model,
-                    messages=messages
-                )
-                result = response['message']['content'].strip()
-                translated_texts[idx] = result
-                self.__class__.cache[text] = result
+            # Atualizar cache e preencher translated_texts
+            for idx, original_idx, result in zip(range(len(translated_results)), non_cached_indices, translated_results):
+                translated_texts[original_idx] = result
+                self.__class__.cache[texts[original_idx]] = result
 
         for index in none_indices:
             translated_texts.insert(index, None)
