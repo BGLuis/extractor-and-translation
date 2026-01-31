@@ -24,13 +24,13 @@ class GoogleTranslate(BaseTranslate):
 
 
     @staticmethod
-    def treats_text(texts):
+    def preprocess_text(texts):
         for i, text in enumerate(texts):
             texts[i] = text
 
 
     @staticmethod
-    def mistreats_text(texts):
+    def postprocess_text(texts):
         for i,text in enumerate(texts):
             texts[i] = text
 
@@ -45,65 +45,10 @@ class GoogleTranslate(BaseTranslate):
         return translate_list
 
 
-    def translate_batch(self, texts, progress_callback=None):
-        if texts is None:
-            return None
-
-        translated_texts = [None] * len(texts)
-        cache_indices = []
-        non_cached_indices = []
-        none_indices = []
-
-        for i, text in enumerate(texts):
-            if text is None:
-                none_indices.append(i)
-            elif isinstance(text, str) and text in self.__class__.cache:
-                translated_texts[i] = self.__class__.cache[text]
-                cache_indices.append(i)
-            else:
-                non_cached_indices.append(i)
-
-        non_cached_texts = [text for text in texts if isinstance(text, str) and text not in self.__class__.cache]
-
-        if non_cached_texts:
-            batches = []
-            current_batch = []
-            current_length = 0
-
-            for text in non_cached_texts:
-                text_unicode = TextsUtils.convert_special_chars_to_unicode(text)
-                text_limiter = text_unicode + self.delimiter
-                if current_length + len(text_limiter) >= self.char_limit:
-                    batches.append(current_batch)
-                    current_batch = []
-                    current_length = 0
-                current_batch.append(text)
-                current_length += len(text_limiter)
-
-            if current_batch:
-                batches.append(current_batch)
-
-            translated_non_cached_texts = self.translate_batch_parallel(batches, progress_callback)
-
-            non_cached_index = 0
-            for i in range(len(translated_texts)):
-                if translated_texts[i] is None and non_cached_index < len(translated_non_cached_texts):
-                    translated_texts[i] = translated_non_cached_texts[non_cached_index]
-                    if isinstance(texts[non_cached_indices[non_cached_index]], str):
-                        self.__class__.cache[texts[non_cached_indices[non_cached_index]]] = translated_non_cached_texts[
-                            non_cached_index]
-                    non_cached_index += 1
-
-            for index in none_indices:
-                translated_texts.insert(index, None)
-
-        return translated_texts
-
-
     def translator(self, texts, progress_callback=None):
         treated_text = TextsUtils.dictToList(texts)
-        self.treats_text(treated_text)
+        self.preprocess_text(treated_text)
         translate_text = self.translate_batch(treated_text, progress_callback)
-        self.mistreats_text(translate_text)
+        self.postprocess_text(translate_text)
         TextsUtils.interactive_item(texts, translate_text)
         return texts

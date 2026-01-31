@@ -7,6 +7,7 @@ import json
 import os
 import time
 import logging
+from pathlib import Path
 import commun.TextsUtils as TextsUtils
 
 logging.basicConfig(filename='error.log', level=logging.ERROR,
@@ -69,8 +70,25 @@ class BaseExtractor(ABC):
 
     @staticmethod
     def import_file(file_name, json_data, folder):
-        with open(os.path.join(folder, file_name), 'w', encoding='utf-8') as f:
-            f.write(json.dumps(json_data, ensure_ascii=False, separators=(',', ':')))
+        try:
+            # Validar se json_data é serializável antes de escrever
+            json_string = json.dumps(json_data, ensure_ascii=False, separators=(',', ':'))
+
+            # Validar se o JSON gerado pode ser recarregado (teste de integridade)
+            json.loads(json_string)
+
+            # Se validação passou, escrever arquivo
+            with open(os.path.join(folder, file_name), 'w', encoding='utf-8') as f:
+                f.write(json_string)
+
+            logging.info(f"✓ Validated and saved: {file_name}")
+        except (TypeError, ValueError) as e:
+            logging.error(f"✗ JSON validation failed for {file_name}: {e}")
+            logging.error(f"  Data type: {type(json_data)}")
+            raise Exception(f"Failed to create valid JSON for {file_name}: {e}")
+        except Exception as e:
+            logging.error(f"✗ Failed to write file {file_name}: {e}")
+            raise
 
     @staticmethod
     @abstractmethod
@@ -115,96 +133,111 @@ class BaseExtractor(ABC):
                 self.threads_status.remove(s)
         self.threads_status.append(status)
 
+    def _get_patterns(self, file_name, data):
+        if hasattr(self, 'get_mask_patterns') and callable(getattr(self, 'get_mask_patterns')):
+            patterns = self.get_mask_patterns(file_name, data)
+        elif hasattr(self, 'mask_patterns'):
+            patterns = self.mask_patterns
+        else:
+            patterns = [
+                re.compile(r'\\[A-Za-z]{1,3}\s*\[[^\]]*\]', re.IGNORECASE),
+                re.compile(r'\$game[a-zA-Z_]+\b', re.IGNORECASE),
+                re.compile(r'\$\s*[a-z]+[A-Z][a-zA-Z]*'),
+                re.compile(r'!?(?<!\\)\b[A-Za-z]{1,2}\s*\[\s*\d+\s*\]', re.IGNORECASE),
+            ]
+
+        if isinstance(patterns, (list, tuple)):
+            compiled_patterns = []
+            for p in patterns:
+                if isinstance(p, str):
+                    compiled_patterns.append(re.compile(p))
+                else:
+                    compiled_patterns.append(p)
+            patterns = compiled_patterns
+        else:
+            patterns = [patterns]
+        return patterns
+
+    def _pipeline_translate(self, file_name, data, text, translate_instance, file_path_str):
+        # 1. Get Patterns
+        patterns = self._get_patterns(file_name, data)
+
+        # 2. Masking
+        try:
+            masked_temp, _mask_map = TextsUtils.mask_tokens_in_structure(text, patterns, prefix="__XTOK_")
+        except Exception:
+            masked_temp, _mask_map = text, {}
+
+        # 3. Translation
+        def progress_callback(current, total):
+            self.add_threads_status({
+                'file': file_path_str,
+                'status': 'process',
+                'current': current,
+                'total': total,
+                'msg': f"Translating batch {current}/{total}"
+            })
+
+        self.add_threads_status({'file': file_path_str, 'status': 'process', 'msg': "Processing file"})
+        translated = translate_instance.translator(masked_temp, progress_callback)
+
+        # 4. Unmasking
+        try:
+            if _mask_map:
+                unmasked = TextsUtils.unmask_tokens_in_structure(translated, _mask_map)
+            else:
+                unmasked = translated
+        except Exception:
+            unmasked = translated
+
+        # 5. Fixing
+        try:
+            self.fix_text_translate(unmasked, text)
+        except Exception as e:
+            logging.error(f"Error applying fix_text_translate in process_file: {e}")
+
+        return unmasked
+
+    def _handle_no_text(self, file_path_str, file_name, data):
+        self.add_threads_status(
+            {'file': file_path_str, 'status': 'ignore', 'msg': "No text to process"})
+        self.import_file(file_name, data, self.folderOutput)
+
     def process_file(self, file, retries=6, delay=20):
         translate = copy.deepcopy(self.translate)
+        file_path_str = str(file)
+
         for attempt in range(retries):
             try:
-                file_name, data = self.extract_files(file)
-                temp = self.extract_text(file_name, data)
-                if temp:
-                    try:
-                        if hasattr(self, 'get_mask_patterns') and callable(getattr(self, 'get_mask_patterns')):
-                            patterns = self.get_mask_patterns(file_name, data)
-                        elif hasattr(self, 'mask_patterns'):
-                            patterns = self.mask_patterns
-                        else:
-                            patterns = [
-                                re.compile(r'\\[A-Za-z]{1,3}\s*\[[^\]]*\]', re.IGNORECASE),
-                                re.compile(r'\$game[a-zA-Z_]+\b', re.IGNORECASE),
-                                re.compile(r'\$\s*[a-z]+[A-Z][a-zA-Z]*'),
-                                re.compile(r'!?(?<!\\)\b[A-Za-z]{1,2}\s*\[\s*\d+\s*\]', re.IGNORECASE),
-                            ]
+                file_name, data = self.extract_files(file_path_str)
+                raw_text = self.extract_text(file_name, data)
 
-                        if isinstance(patterns, (list, tuple)):
-                            compiled_patterns = []
-                            for p in patterns:
-                                if isinstance(p, str):
-                                    compiled_patterns.append(re.compile(p))
-                                else:
-                                    compiled_patterns.append(p)
-                            patterns = compiled_patterns
-                        else:
-                            patterns = [patterns]
+                if not raw_text:
+                    self._handle_no_text(file_path_str, file_name, data)
+                    return
 
-                        try:
-                            masked_temp, _mask_map = TextsUtils.mask_tokens_in_structure(temp, patterns, prefix="__XTOK_")
-                        except Exception:
-                            masked_temp, _mask_map = temp, {}
-                    except Exception:
-                        masked_temp, _mask_map = temp, {}
-                else:
-                    masked_temp, _mask_map = temp, {}
-                if temp:
-                    old = copy.deepcopy(temp)
-                    self.add_threads_status({'file': file, 'status': 'process', 'msg': "Processing file"})
+                translated_text = self._pipeline_translate(file_name, data, raw_text, translate, file_path_str)
 
-                    def progress_callback(current, total):
-                        self.add_threads_status({
-                            'file': file,
-                            'status': 'process',
-                            'current': current,
-                            'total': total,
-                            'msg': f"Translating batch {current}/{total}"
-                        })
+                merged_data = self.merge_dicts_texts(translated_text, raw_text)
 
-                    translate.translator(masked_temp, progress_callback)
-
-                    try:
-                        if _mask_map:
-                            unmasked = TextsUtils.unmask_tokens_in_structure(masked_temp, _mask_map)
-                        else:
-                            unmasked = masked_temp
-                    except Exception:
-                        unmasked = masked_temp
-
-                    try:
-                        self.fix_text_translate(unmasked, old)
-                    except Exception as e:
-                        logging.error(f"Error applying fix_text_translate in process_file: {e}")
-
-                    merge = self.merge_dicts_texts(unmasked, old)
-
-                    updated_data = self.update_json(file_name, data, merge)
-                    self.import_file(file_name, updated_data, self.folderProcess)
-                    self.add_threads_status({'file': file, 'status': 'success', 'msg': "Processed successfully"})
-                else:
-                    self.add_threads_status(
-                        {'file': file, 'status': 'ignore', 'msg': "No text to process"})
-                    self.import_file(file_name, data, self.folderOutput)
-
+                updated_data = self.update_json(file_name, data, merged_data)
+                self.import_file(file_name, updated_data, self.folderProcess)
+                self.add_threads_status({'file': file_path_str, 'status': 'success', 'msg': "Processed successfully"})
                 return
+
             except Exception as e:
                 logging.error(f"Error processing file {file}: {e}")
                 self.add_threads_status(
-                    {'file': file, 'status': 'danger', 'msg': f"Error processing file {file}"})
+                    {'file': file_path_str, 'status': 'danger', 'msg': f"Error processing file {file}"})
+
                 if attempt < retries - 1:
                     self.add_threads_status(
-                        {'file': file, 'status': 'waiting', 'msg': f"Retrying in {delay} seconds..."})
+                        {'file': file_path_str, 'status': 'waiting', 'msg': f"Retrying in {delay} seconds..."})
                     time.sleep(delay)
                     translate.reduce_limite()
                 else:
                     self.add_threads_status(
-                        {'file': file, 'status': 'erro', 'msg': f"Failed to process after {retries}"})
+                        {'file': file_path_str, 'status': 'erro', 'msg': f"Failed to process after {retries}"})
 
     def process_files(self):
         for file in glob.glob(self.__class__.folderInput + '/*'):

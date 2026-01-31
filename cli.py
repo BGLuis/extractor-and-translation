@@ -3,7 +3,10 @@ import sys
 import os
 import time
 
-if os.name == 'nt':
+# Configurações de Plataforma
+IS_WINDOWS = os.name == 'nt'
+
+if IS_WINDOWS:
     try:
         import keyboard
     except ImportError:
@@ -17,8 +20,8 @@ else:
         print("ERRO: biblioteca 'curses' não disponível.")
         sys.exit(1)
 
-# Cores ANSI para terminal normal
-ansi_colors = {
+# Cores ANSI
+ANSI_COLORS = {
     'reset': '\033[0m',
     'red': '\033[91m',
     'green': '\033[92m',
@@ -29,34 +32,15 @@ ansi_colors = {
     'white': '\033[97m',
 }
 
-# Cores para curses (apenas se disponível)
-if os.name != 'nt':
-    curses_colors = {
-        'red': curses.COLOR_RED,
-        'green': curses.COLOR_GREEN,
-        'yellow': curses.COLOR_YELLOW,
-        'blue': curses.COLOR_BLUE,
-        'magenta': curses.COLOR_MAGENTA,
-        'cyan': curses.COLOR_CYAN,
-        'white': curses.COLOR_WHITE,
-    }
-else:
-    curses_colors = {}  # Não usado no Windows
-
 def clear_screen():
-    if os.name == 'nt':
-        os.system('cls')
-    else:
-        os.system('clear')
-
-def print_colored_line(text, color='white'):
-    color_code = ansi_colors.get(color, ansi_colors['reset'])
-    print(f"{color_code}{text}{ansi_colors['reset']}")
+    os.system('cls' if IS_WINDOWS else 'clear')
 
 def colored_string(text, color='white'):
-    color_code = ansi_colors.get(color, ansi_colors['reset'])
-    return f"{color_code}{text}{ansi_colors['reset']}"
+    code = ANSI_COLORS.get(color, ANSI_COLORS['reset'])
+    return f"{code}{text}{ANSI_COLORS['reset']}"
 
+def print_colored_line(text, color='white'):
+    print(colored_string(text, color))
 
 def progress_bar(current, total, length=20, fill='█', empty='░', show_percent=True, show_count=True, color=None):
     if total == 0:
@@ -67,33 +51,22 @@ def progress_bar(current, total, length=20, fill='█', empty='░', show_percen
     filled_length = int(length * percent)
     bar = fill * filled_length + empty * (length - filled_length)
 
-    # Aplicar cor se especificada
-    if color:
-        bar = colored_string(bar, color)
-    elif percent >= 1.0:
-        bar = colored_string(bar, 'green')
-    elif percent >= 0.7:
-        bar = colored_string(bar, 'cyan')
-    elif percent >= 0.3:
-        bar = colored_string(bar, 'yellow')
-    else:
-        bar = colored_string(bar, 'red')
+    if not color:
+        if percent >= 1.0: color = 'green'
+        elif percent >= 0.7: color = 'cyan'
+        elif percent >= 0.3: color = 'yellow'
+        else: color = 'red'
 
-    # Montar string final
-    result = bar
+    result = colored_string(bar, color)
 
     if show_percent:
-        percent_str = f" {percent:.0%}"
-        result += percent_str
-
+        result += f" {percent:.0%}"
     if show_count:
-        count_str = f" ({current}/{total})"
-        result += count_str
+        result += f" ({current}/{total})"
 
     return result
 
-def select_opition(Title, options, index=0):
-
+def select_option(title, options, index=0):
     if isinstance(options, dict):
         keys = list(options.keys())
         values = options
@@ -101,14 +74,15 @@ def select_opition(Title, options, index=0):
         keys = options
         values = None
 
-    if os.name == 'nt':
-        return _select_option_windows(Title, keys, values, index)
+    if IS_WINDOWS:
+        return _select_option_windows(title, keys, values, index)
     else:
-        return _select_option_linux(Title, keys, values, index)
+        return _select_option_linux(title, keys, values, index)
 
+# Alias para compatibilidade, caso algum arquivo externo ainda use o nome antigo
+select_opition = select_option
 
 def _select_option_windows(title, keys, values, index):
-    # keyboard está disponível apenas no Windows
     while True:
         clear_screen()
         print(title)
@@ -118,8 +92,8 @@ def _select_option_windows(title, keys, values, index):
             else:
                 print(f"  {key}")
 
-        event = keyboard.read_event()  # type: ignore
-        if event.event_type == keyboard.KEY_DOWN:  # type: ignore
+        event = keyboard.read_event()
+        if event.event_type == keyboard.KEY_DOWN:
             if event.name == 'down':
                 index = (index + 1) % len(keys)
             elif event.name == 'up':
@@ -128,18 +102,18 @@ def _select_option_windows(title, keys, values, index):
                 return values[keys[index]] if values else keys[index]
             elif event.name == 'esc':
                 return "Exit"
-
+            time.sleep(0.05)
 
 def _select_option_linux(title, keys, values, index):
     def menu(stdscr):
         nonlocal index
         curses.curs_set(0)
         curses.start_color()
-
         try:
             curses.use_default_colors()
             curses.init_pair(1, curses.COLOR_CYAN, -1)
         except curses.error:
+            # Fallback para terminais que não suportam transparência (-1)
             curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
 
         while True:
@@ -160,116 +134,112 @@ def _select_option_linux(title, keys, values, index):
                 index = (index - 1) % len(keys)
             elif key_event in [curses.KEY_ENTER, 10, 13]:
                 return values[keys[index]] if values else keys[index]
-            elif key_event == 27:  # ESC
+            elif key_event == 27: # ESC
                 return "Exit"
 
     return curses.wrapper(menu)
 
 def instruction(description, color='green'):
-    def wait_enter(stdscr):
-        stdscr.clear()
-        curses.use_default_colors()
-
-        curses.init_pair(2, curses_colors.get(color, curses.COLOR_WHITE),-1)
-        stdscr.addstr(0, 0, description + "\n", curses.color_pair(2))
-        stdscr.addstr(2, 0, "Pressione Enter para continuar...")
-        stdscr.refresh()
-        while True:
-            key = stdscr.getch()
-            if key in [curses.KEY_ENTER, 10, 13]:
-                break
-    curses.wrapper(wait_enter)
+    if IS_WINDOWS:
+        print_colored_line(description, color)
+        input("Pressione Enter para continuar...")
+    else:
+        def wait_enter(stdscr):
+            stdscr.clear()
+            curses.use_default_colors()
+            # Mapeamento aproximado de cores
+            c_code = getattr(curses, f"COLOR_{color.upper()}", curses.COLOR_WHITE)
+            curses.init_pair(2, c_code, -1)
+            
+            stdscr.addstr(0, 0, description + "\n", curses.color_pair(2))
+            stdscr.addstr(2, 0, "Pressione Enter para continuar...")
+            stdscr.refresh()
+            while True:
+                key = stdscr.getch()
+                if key in [curses.KEY_ENTER, 10, 13]:
+                    break
+        curses.wrapper(wait_enter)
 
 def status_color(status):
-    if status == 'success':
-        return colored_string(status, 'green')
-    elif status == 'erro':
-        return colored_string(status, 'red')
-    elif status == 'danger':
-        return colored_string(status, 'red')
-    elif status == 'waiting':
-        return colored_string(status, 'yellow')
-    elif status == 'process':
-        return colored_string(status, 'cyan')
-    else:
-        return colored_string(status, 'white')
+    map_color = {
+        'success': 'green',
+        'erro': 'red',
+        'danger': 'red',
+        'waiting': 'yellow',
+        'process': 'cyan',
+    }
+    return colored_string(status, map_color.get(status, 'white'))
 
 def show_status(threads_status):
     ignore_counts = {}
-    while True:
-        clear_screen()
-        all_done = True
-        table = []
-        for status in threads_status:
-            if status['status'] == 'ignore':
-                file = status['file']
-                if file not in ignore_counts:
-                    ignore_counts[file] = 0
-                ignore_counts[file] += 1
-                if ignore_counts[file] > 4:
-                    continue
+    
+    # Ocultar cursor no Linux para evitar "piscada" visual
+    if not IS_WINDOWS:
+        print("\033[?25l", end="")
 
-            if status['status'] == 'success':
-                file = status['file']
-                if file not in ignore_counts:
-                    ignore_counts[file] = 0
-                ignore_counts[file] += 1
-                if ignore_counts[file] > 10:
-                    continue
-
-            if 'current' in status and 'total' in status:
-                progress = progress_bar(status['current'], status['total'], length=10)
-                table.append([
-                    status['file'],
-                    status_color(status['status']),
-                    status['msg'],
-                    progress,
-                ])
-            else:
-                table.append([status['file'], status_color(status['status']), status['msg']])
-
-            if status['status'] not in ['erro', 'success', 'ignore']:
-                all_done = False
-            print(tabulate(table, headers=['File', 'Status', 'Message', 'Progress'], tablefmt='plain'))
-
-        if all_done:
-            break
-        time.sleep(1)
-
-def _lazy_import_pyqt():
-    """Import PyQt5 apenas quando necessário"""
     try:
-        from PyQt5.QtWidgets import QApplication, QFileDialog
-        return QApplication, QFileDialog
-    except ImportError:
-        print_colored_line("ERRO: PyQt5 não instalado.", 'red')
-        print_colored_line("Execute: pip install PyQt5", 'yellow')
-        return None, None
+        while True:
+            clear_screen()
+            all_done = True
+            table = []
+            
+            for status in threads_status:
+                s_code = status.get('status', '')
+                file = status.get('file', '')
+                
+                # Ocultar itens concluídos após um tempo
+                if s_code in ['ignore', 'success']:
+                    ignore_counts[file] = ignore_counts.get(file, 0) + 1
+                    limit = 4 if s_code == 'ignore' else 10
+                    if ignore_counts[file] > limit:
+                        continue
+                
+                msg = status.get('msg', '')
+                colored_s = status_color(s_code)
+                
+                if 'current' in status and 'total' in status:
+                    prog = progress_bar(status['current'], status['total'], length=10)
+                    table.append([file, colored_s, msg, prog])
+                else:
+                    table.append([file, colored_s, msg])
 
+                if s_code not in ['erro', 'success', 'ignore']:
+                    all_done = False
+            
+            headers = ['File', 'Status', 'Message', 'Progress']
+            print(tabulate(table, headers=headers, tablefmt='plain'))
+
+            if all_done:
+                break
+            time.sleep(1)
+    finally:
+        # Restaurar cursor
+        if not IS_WINDOWS:
+            print("\033[?25h", end="")
 
 def select_folder(title="Selecione uma pasta"):
     """
-    Abre diálogo para seleção de pasta
-
-    Args:
-        title: Título da janela
-
-    Returns:
-        Caminho da pasta ou None se cancelado/erro
+    Usa tkinter (biblioteca padrão) para selecionar pasta.
+    Se não disponível (ex: headless), pede input manual.
     """
-    QApplication, QFileDialog = _lazy_import_pyqt()
-    if not QApplication or not QFileDialog:
-        return None
-
     try:
-        app = QApplication.instance()
-        if app is None:
-            app = QApplication(sys.argv)
-
-        folder = QFileDialog.getExistingDirectory(None, title)
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        # Inicializa Tkinter root mas esconde a janela principal
+        root = tk.Tk()
+        root.withdraw()
+        
+        # Tenta colocar a janela no topo
+        root.attributes('-topmost', True)
+        
+        folder = filedialog.askdirectory(title=title)
+        root.destroy()
+        
         return folder if folder else None
-
     except Exception as e:
-        print_colored_line(f"Erro ao abrir seletor de pasta: {e}", 'red')
-        print_colored_line("Dica: Digite o caminho manualmente", 'yellow')
-        return None
+        # Fallback para input manual em caso de erro (ex: falta de display X11)
+        print_colored_line(f"Seletor gráfico indisponível: {e}", 'yellow')
+        print_colored_line("Digite o caminho absoluto da pasta:", 'cyan')
+        path = input("> ").strip()
+        return path if path and os.path.exists(path) else None

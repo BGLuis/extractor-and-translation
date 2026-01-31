@@ -19,26 +19,8 @@ lang_options = {
     'automatico': 'auto'
 }
 
-def list_subclasses(cls):
-    cls = cls.__subclasses__()
-    subclasses = []
-    for subclass in cls:
-        subclasses.append((subclass.name, subclass))
-    return subclasses
-
-def list_subclasses_extractor():
-    cls = BaseExtractor.__subclasses__()
-    subclasses = {}
-    for subclass in cls:
-        subclasses[subclass.name] = subclass
-    return subclasses
-
-def list_subclasses_translate():
-    cls = BaseTranslate.__subclasses__()
-    subclasses = {}
-    for subclass in cls:
-        subclasses[subclass.agent] = subclass
-    return subclasses
+def get_subclasses_map(cls, key_attr='name'):
+    return {getattr(sub, key_attr): sub for sub in cls.__subclasses__()}
 
 def remove_lang_options(lang_source):
     for key in lang_options.keys():
@@ -121,12 +103,12 @@ Exemplos de uso:
 def list_options():
     """Print available options and exit"""
     print("\n=== EXTRATORES DISPONÍVEIS ===")
-    extractors = list_subclasses_extractor()
+    extractors = get_subclasses_map(BaseExtractor, 'name')
     for name in extractors.keys():
         print(f"  - {name}")
 
     print("\n=== TRADUTORES DISPONÍVEIS ===")
-    translators = list_subclasses_translate()
+    translators = get_subclasses_map(BaseTranslate, 'agent')
     for name in translators.keys():
         print(f"  - {name}")
 
@@ -139,12 +121,12 @@ def validate_arguments(args):
     errors = []
 
     if args.extractor:
-        extractors = list_subclasses_extractor()
+        extractors = get_subclasses_map(BaseExtractor, 'name')
         if args.extractor not in extractors:
             errors.append(f"Extrator '{args.extractor}' não encontrado. Opções: {list(extractors.keys())}")
 
     if args.translator:
-        translators = list_subclasses_translate()
+        translators = get_subclasses_map(BaseTranslate, 'agent')
         if args.translator not in translators:
             errors.append(f"Tradutor '{args.translator}' não encontrado. Opções: {list(translators.keys())}")
 
@@ -164,13 +146,13 @@ def validate_arguments(args):
 
 
 def run_interactive_mode():
-    extractor = cli.select_opition("Que Tipo de extrator de Texto vc gostaria:", list_subclasses_extractor())
-    translator = cli.select_opition("Que Tipo de agente de tradução vc gostaria:", list_subclasses_translate())
+    extractor = cli.select_option("Que Tipo de extrator de Texto vc gostaria:", get_subclasses_map(BaseExtractor, 'name'))
+    translator = cli.select_option("Que Tipo de agente de tradução vc gostaria:", get_subclasses_map(BaseTranslate, 'agent'))
     translate = translator()
 
-    lang_source = cli.select_opition("Selecione o idioma de origem:", lang_options)
+    lang_source = cli.select_option("Selecione o idioma de origem:", lang_options)
     remove_lang_options(lang_source)
-    lang_target = cli.select_opition("Selecione o idioma de destino:", lang_options)
+    lang_target = cli.select_option("Selecione o idioma de destino:", lang_options)
 
     translate.change_language(lang_source, lang_target)
 
@@ -245,8 +227,8 @@ def run_interactive_mode():
 
 
 def run_command_line_mode(args):
-    extractors = list_subclasses_extractor()
-    translators = list_subclasses_translate()
+    extractors = get_subclasses_map(BaseExtractor, 'name')
+    translators = get_subclasses_map(BaseTranslate, 'agent')
 
     extractor_class = extractors[args.extractor]
     translator_class = translators[args.translator]
@@ -311,13 +293,13 @@ if __name__ == '__main__':
     if args.list_extractors or args.list_translators or args.list_languages:
         if args.list_extractors:
             print("\n=== EXTRATORES DISPONÍVEIS ===")
-            extractors = list_subclasses_extractor()
+            extractors = get_subclasses_map(BaseExtractor, 'name')
             for name in extractors.keys():
                 print(f"  - {name}")
 
         if args.list_translators:
             print("\n=== TRADUTORES DISPONÍVEIS ===")
-            translators = list_subclasses_translate()
+            translators = get_subclasses_map(BaseTranslate, 'agent')
             for name in translators.keys():
                 print(f"  - {name}")
 

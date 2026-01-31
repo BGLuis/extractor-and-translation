@@ -106,6 +106,34 @@ class BaseTranslate(ABC):
     def _translate_single_batch(self, texts):
         pass
 
+    def _create_batches(self, texts):
+        """
+        Default implementation: chunks texts based on char_limit.
+        Can be overridden by subclasses if different batching logic is needed.
+        """
+        import commun.TextsUtils as TextsUtils
+        batches = []
+        current_batch = []
+        current_length = 0
+
+        for text in texts:
+            text_unicode = TextsUtils.convert_special_chars_to_unicode(text)
+            text_limiter = text_unicode + self.delimiter
+            
+            # If adding this text exceeds the limit and we have a non-empty batch, start a new one
+            if current_length + len(text_limiter) >= self.char_limit and current_batch:
+                batches.append(current_batch)
+                current_batch = []
+                current_length = 0
+            
+            current_batch.append(text)
+            current_length += len(text_limiter)
+
+        if current_batch:
+            batches.append(current_batch)
+            
+        return batches
+
     def translate_batch_parallel(self, batches, progress_callback=None):
         if not batches:
             return []
@@ -139,9 +167,56 @@ class BaseTranslate(ABC):
 
         return all_translations
 
-    @abstractmethod
     def translate_batch(self, texts, progress_callback=None):
-        pass
+        if texts is None:
+            return None
+
+        # 1. Identify what needs to be translated vs what is cached
+        translated_texts = [None] * len(texts)
+        cache_indices = []
+        non_cached_indices = []
+        none_indices = [] # Indices where input text is None
+
+        for i, text in enumerate(texts):
+            if text is None:
+                none_indices.append(i)
+            elif isinstance(text, str) and text in self.__class__.cache:
+                translated_texts[i] = self.__class__.cache[text]
+                cache_indices.append(i)
+            else:
+                non_cached_indices.append(i)
+
+        non_cached_texts = [texts[i] for i in non_cached_indices]
+
+        # 2. Process non-cached texts
+        if non_cached_texts:
+            batches = self._create_batches(non_cached_texts)
+            translated_results = self.translate_batch_parallel(batches, progress_callback)
+
+            # 3. Merge results back
+            # We must be careful if translated_results count matches non_cached_texts count
+            # Ideally they should match 1-to-1 if _translate_single_batch works correctly
+            
+            current_result_idx = 0
+            for i in range(len(non_cached_indices)):
+                original_idx = non_cached_indices[i]
+                original_text = texts[original_idx]
+                
+                if current_result_idx < len(translated_results):
+                    result = translated_results[current_result_idx]
+                    translated_texts[original_idx] = result
+                    if isinstance(original_text, str):
+                         self.__class__.cache[original_text] = result
+                    current_result_idx += 1
+                else:
+                    # Fallback if translation returned fewer items than expected
+                    translated_texts[original_idx] = original_text # Or handle error
+
+        # 4. Restore None values
+        for index in none_indices:
+            translated_texts[index] = None
+
+        return translated_texts
 
 
     @abstractmethod

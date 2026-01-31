@@ -52,15 +52,19 @@ class OllamaTranslate(BaseTranslate):
         self.init_cache()
 
     @staticmethod
-    def treats_text(texts):
+    def preprocess_text(texts):
         for i, text in enumerate(texts):
             texts[i] = text
 
 
     @staticmethod
-    def mistreats_text(texts):
+    def postprocess_text(texts):
         for i, text in enumerate(texts):
             texts[i] = text
+
+    def _create_batches(self, texts):
+        """Ollama prefers single-item batches to manage context window and prompt size."""
+        return [[text] for text in texts]
 
     def _translate_single_batch(self, texts):
         if not texts or len(texts) != 1:
@@ -88,44 +92,10 @@ class OllamaTranslate(BaseTranslate):
 
         return [result]
 
-    def translate_batch(self, texts, progress_callback=None):
-        if texts is None:
-            return None
-
-        translated_texts = [None] * len(texts)
-        cache_indices = []
-        non_cached_indices = []
-        none_indices = []
-
-        for i, text in enumerate(texts):
-            if text is None:
-                none_indices.append(i)
-            elif isinstance(text, str) and text in self.__class__.cache:
-                translated_texts[i] = self.__class__.cache[text]
-                cache_indices.append(i)
-            else:
-                non_cached_indices.append(i)
-
-        non_cached_texts = [texts[i] for i in non_cached_indices]
-
-        if non_cached_texts:
-            batches = [[text] for text in non_cached_texts]
-
-            translated_results = self.translate_batch_parallel(batches, progress_callback)
-
-            for idx, original_idx, result in zip(range(len(translated_results)), non_cached_indices, translated_results):
-                translated_texts[original_idx] = result
-                self.__class__.cache[texts[original_idx]] = result
-
-        for index in none_indices:
-            translated_texts.insert(index, None)
-
-        return translated_texts
-
     def translator(self, texts, progress_callback=None):
         treated_text = TextsUtils.dictToList(texts)
-        self.treats_text(treated_text)
+        self.preprocess_text(treated_text)
         translate_text = self.translate_batch(treated_text, progress_callback)
-        self.mistreats_text(translate_text)
+        self.postprocess_text(translate_text)
         TextsUtils.interactive_item(texts, translate_text)
         return texts
