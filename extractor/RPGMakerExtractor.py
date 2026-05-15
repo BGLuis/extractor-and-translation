@@ -1,793 +1,302 @@
 import json
 import os
-from extractor.BaseExtractor import BaseExtractor
-import commun.TextsUtils as TextsUtils
 import re
 import logging
-
+from extractor.BaseExtractor import BaseExtractor
+import commun.TextsUtils as TextsUtils
+from extractor.RPGEventCodes import RPGEventCode
+from extractor.RPGTextFilters import RPGTextFilters
+from extractor.RPGEventStrategy import (
+    ShowTextStrategy, ChoiceStrategy, ScriptStrategy, 
+    PluginStrategyMZ, PluginStrategyMV
+)
 
 class RPGMakerExtractor(BaseExtractor):
     name = 'RPG Maker'
     files_types = ['json', 'rvdata2']
-    _quotes = r'[\"|\']'
-    quote_extraction_pattern = re.compile(r"'.*?'|\".*?\"")
-    tag_extraction_pattern = re.compile(r'<.*?>*?</.*?>')
-    title_extraction_pattern = re.compile(r'<([^<>]*)>|<<([^<>]*)>>')
 
-    _note_tag_pattern = re.compile(fr'(<{re.escape("Desc")}|{re.escape("Help")}|{re.escape("Text")}|{re.escape("Profile")}|{re.escape("Message")}|{re.escape("Info")}[^:>]*):\s*([^>]+)>', re.IGNORECASE)
-
-    _choice_condition_pattern = re.compile(r'^(?:if|show_if|hide_if|en|pt|ja|es|fr)\s*\(.*\)\s*', re.IGNORECASE)
-
-    _variable_pattern = re.compile(r'[a-zA-Z]{1,2}\[.*?\]')
-    _subject_pattern = re.compile(r'\d_t=\d{2,}_subject=')
-    _fs_pattern = re.compile(r'fs\[\d+\]')
-
-    @classmethod
-    def get_interactive_questions(cls):
-        return []
+    def __init__(self, translate):
+        super().__init__(translate)
+        self._strategies = {
+            RPGEventCode.SHOW_TEXT: ShowTextStrategy(),
+            RPGEventCode.SHOW_TEXT_MORE: ShowTextStrategy(),
+            RPGEventCode.SCROLL_TEXT: ShowTextStrategy(),
+            RPGEventCode.COMMENT: ShowTextStrategy(),
+            RPGEventCode.LABEL: ShowTextStrategy(),
+            RPGEventCode.SHOW_CHOICES: ChoiceStrategy(),
+            RPGEventCode.SCRIPT: ScriptStrategy(),
+            RPGEventCode.SCRIPT_MORE: ScriptStrategy(),
+            RPGEventCode.SHOW_NAME: ShowTextStrategy(),
+            RPGEventCode.CHANGE_NAME: ShowTextStrategy(),
+            RPGEventCode.CONTROL_VARIABLES: ShowTextStrategy(),
+            RPGEventCode.PLUGIN_COMMAND_MV: PluginStrategyMV(),
+            RPGEventCode.PLUGIN_COMMAND_MZ: PluginStrategyMZ(),
+        }
 
     def apply_configuration(self, config):
         pass
 
-    def __init__(self, translate):
-        super().__init__(translate)
-
     def get_mask_patterns(self, file_name=None, data=None):
-        """
-        Retorna uma lista de padrões compilados (re.Pattern) para mascaramento
-        de tokens técnicos antes da tradução.
-        """
         p_format_codes = re.compile(r'\\.[A-Za-z]{1,3}\s*\[[^\]]*\]', re.IGNORECASE)
-
         game_keys = ['variables', 'switches', 'party', 'actors', 'player', 'map', 'system', 'screen', 'timer', 'message', 'temp', 'troop', 'interpreter']
         p_game = re.compile(r'\$game(' + '|'.join(game_keys) + r')\b', re.IGNORECASE)
-
         p_bracket_vars = re.compile(r'!?(?<!\\)\b[A-Za-z]{1,2}\s*\[\s*\d+\s*\]', re.IGNORECASE)
-
         p_if_condition = re.compile(r'if\s*\(\s*!?\s*[A-Za-z]{1,2}\s*\[\s*\d+\s*\]\s*\)', re.IGNORECASE)
-
         p_lang_wrapper = re.compile(r'\b(?:en|pt|ja|es|fr)\s*\([^)]+\)', re.IGNORECASE)
-
         p_boolean_literals = re.compile(r'\b(?:true|false|null|undefined|NaN)\b', re.IGNORECASE)
-
         p_operators = re.compile(r'(?:&&|\|\||>=|<=|!==|===|!=|==)')
-
         p_dollar_camel = re.compile(r'\$\s*[a-z]+[A-Z][a-zA-Z]*')
-
-        # Protege tags HTML e suas variações (abertura, fechamento, auto-fechamento)
-        # Exemplos: <center>, </center>, <br>, <br/>, <img src="...">, <wordWrap>, etc.
         p_html_tags = re.compile(r'</?[a-zA-Z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>', re.IGNORECASE)
-
-        # Protege valores técnicos comuns usados em configurações de plugins
-        # Yes/No, single letters (A-Z), números, end, nochannel, etc.
         p_technical_values = re.compile(r'^(?:Yes|No|OK|Cancel|end|start|stop|play|pause|nochannel|channel)$', re.IGNORECASE)
 
         return [p_format_codes, p_game, p_bracket_vars, p_if_condition, p_lang_wrapper, p_boolean_literals, p_operators, p_dollar_camel, p_html_tags, p_technical_values]
 
-    _codes_simple_extraction = [401, 405, 408, 108, 118]
-    _codes_first_element_extraction = [102]
-    _codes_function_extraction = [355, 655]
-    _codes_second_element_extraction = [320]
-    _codes_fifth_element_extraction = [122, 101]
-    _codes_prefix_extraction = [356]
-    _codes_fourth_element=[357]
-
-    _codes_find = (
-        _codes_simple_extraction +
-        _codes_first_element_extraction +
-        _codes_function_extraction +
-        _codes_second_element_extraction +
-        _codes_fifth_element_extraction +
-        _codes_prefix_extraction +
-        _codes_fourth_element
-    )
-
-    _prefixes = [
-        "D_TEXT",
-        "addLog",
-        r"InformationWindow \d+ Text:",
-        "mes ="
-    ]
-
-    _compiled_prefixes = [re.compile(prefix) for prefix in _prefixes]
-
-    _text_keys = [
-        "icon:",
-        "secret:",
-        "title:",
-        "name:",
-        "text:",
-        "message:",
-        "text1:",
-        "text2:",
-        "secretText:",
-        "id:"
-    ]
-
-    _attributes_find = [
-        r'name',
-        r'note',
-        r'profile',
-        r'description',
-        r'nickname',
-        r'message\d{1}'
-    ]
-    _attributes_system_find = [
-        'armorTypes',
-        'equipTypes',
-        'gameTitle',
-        'skillTypes',
-        'terms',
-        'switches'
-    ]
-
-    @staticmethod
-    def is_string_numeric(string):
-        try:
-            float(string)
-            return True
-        except ValueError:
-            return False
-
-    @staticmethod
-    def is_string_boolean(string):
-        return string.lower() in ['true', 'false']
-
     @staticmethod
     def ignore_text(text):
-        ignore_prefixes = [
-            "$", "D_TEXT", "\"+", "\'+", "voice_", "ChoiceVariableId", "PLM", "\"00",
-            "let result", "const ", "var ", "this.", "return", "if", "else", "while", "for", "function", "=>",
-            "new ", "class ", "extends ", "super(", "import ", "export ", "async ", "await ",
-            "try", "catch", "finally", "{", "}", "[", "]", "!", "false", "true", "null", "undefined", "NaN",
-        ]
+        return RPGTextFilters.is_technical_or_code(text)
 
-        ignore_param = [
-            "&&", "||", "==", "!=", "===", "!==", "$gamevariables.value", "Math."
-        ]
+    def extract_text_codes_item(self, item, index):
+        code = RPGEventCode.from_code(item.get('code'))
+        strategy = self._strategies.get(code)
+        if strategy:
+            text = strategy.extract(item)
+            if text:
+                return {"id": index, "text": text}
+        return {"id": index, "text": []}
 
-        # Valores técnicos exatos que não devem ser traduzidos (case-insensitive)
-        technical_values = {
-            'YES', 'NO', 'OK', 'CANCEL', 'TRUE', 'FALSE', 'NULL', 'UNDEFINED',
-            'END', 'START', 'STOP', 'PLAY', 'PAUSE', 'NOCHANNEL', 'CHANNEL',
-            'LEFT', 'RIGHT', 'CENTER', 'TOP', 'BOTTOM', 'MIDDLE', 'ON', 'OFF',
-            'NO CHANGE', 'NONE', 'AUTO', 'DEFAULT', 'ALWAYS', 'NEVER',
-            'ENABLE', 'DISABLE', 'ENABLED', 'DISABLED',
-            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M',
-            'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'
-        }
+    def insert_text_map_item(self, item, list_item):
+        code = RPGEventCode.from_code(item.get('code'))
+        strategy = self._strategies.get(code)
+        if strategy:
+            strategy.insert(item, list_item['text'])
 
-        if isinstance(text, str):
-            if text == '':
-                return True
+    def _yield_commands(self, data, file_type):
+        if file_type == 'Map':
+            for event in data.get('events', []):
+                if not event: continue
+                for page_idx, page in enumerate(event.get('pages', [])):
+                    for cmd_idx, cmd in enumerate(page.get('list', [])):
+                        yield (event['id'], page_idx, cmd_idx, cmd)
+        elif file_type == 'CommonEvents':
+            for event in data:
+                if not event: continue
+                for cmd_idx, cmd in enumerate(event.get('list', [])):
+                    yield (event['id'], None, cmd_idx, cmd)
+        elif file_type == 'Troops':
+            for troop in data:
+                if not troop: continue
+                for page_idx, page in enumerate(troop.get('pages', [])):
+                    for cmd_idx, cmd in enumerate(page.get('list', [])):
+                        yield (troop['id'], page_idx, cmd_idx, cmd)
 
-            # Verifica valores técnicos exatos
-            if text.upper() in technical_values:
-                return True
+    def extract_text_map(self, data):
+        results = []
+        events_map = {}
+        for event_id, page_idx, cmd_idx, cmd in self._yield_commands(data, 'Map'):
+            text_obj = self.extract_text_codes_item(cmd, cmd_idx)
+            if text_obj['text']:
+                if event_id not in events_map:
+                    events_map[event_id] = {"id": event_id, "pages": []}
+                    results.append(events_map[event_id])
+                
+                # Find or create page
+                page_obj = next((p for p in events_map[event_id]['pages'] if p['id'] == page_idx), None)
+                if not page_obj:
+                    page_obj = {"id": page_idx, "list": []}
+                    events_map[event_id]['pages'].append(page_obj)
+                
+                page_obj['list'].append(text_obj)
+        return results
 
-            # Ignora strings que são só números
-            if text.replace('.', '').replace(',', '').replace('-', '').replace('+', '').replace(' ', '').isdigit():
-                return True
+    def insert_text_map(self, data, translated_data):
+        for event_data in translated_data:
+            event_id = event_data['id']
+            for page_data in event_data['pages']:
+                page_id = page_data['id']
+                for list_item in page_data['list']:
+                    cmd_id = list_item['id']
+                    cmd = data['events'][event_id]['pages'][page_id]['list'][cmd_id]
+                    self.insert_text_map_item(cmd, list_item)
 
-            if any(text.startswith(prefix) for prefix in ignore_prefixes):
-                return True
+    def extract_text_common_events(self, data):
+        results = []
+        events_map = {}
+        for event_id, _, cmd_idx, cmd in self._yield_commands(data, 'CommonEvents'):
+            text_obj = self.extract_text_codes_item(cmd, cmd_idx)
+            if text_obj['text']:
+                if event_id not in events_map:
+                    events_map[event_id] = {"id": event_id, "list": []}
+                    results.append(events_map[event_id])
+                events_map[event_id]['list'].append(text_obj)
+        return results
 
-            if any(param in text for param in ignore_param):
-                return True
-        elif isinstance(text, list):
-            if all(isinstance(item, str) and any(item.startswith(prefix) for prefix in ignore_prefixes) for item in
-                   text):
-                return True
-            elif any(isinstance(item, str) and param in item for item in text for param in ignore_param):
-                return True
+    def insert_text_common_events(self, data, translated_data):
+        for event_data in translated_data:
+            event_id = event_data['id']
+            for list_item in event_data['list']:
+                cmd_id = list_item['id']
+                cmd = data[event_id]['list'][cmd_id]
+                self.insert_text_map_item(cmd, list_item)
 
-        return False
+    def extract_text_troops(self, data):
+        results = []
+        troops_map = {}
+        for troop_id, page_idx, cmd_idx, cmd in self._yield_commands(data, 'Troops'):
+            text_obj = self.extract_text_codes_item(cmd, cmd_idx)
+            if text_obj['text']:
+                if troop_id not in troops_map:
+                    troops_map[troop_id] = {"id": troop_id, "pages": []}
+                    results.append(troops_map[troop_id])
+                
+                page_obj = next((p for p in troops_map[troop_id]['pages'] if p['id'] == page_idx), None)
+                if not page_obj:
+                    page_obj = {"id": page_idx, "list": []}
+                    troops_map[troop_id]['pages'].append(page_obj)
+                
+                page_obj['list'].append(text_obj)
+        return results
 
-    @staticmethod
-    def extract_text_codes_item(iten, i):
-        list_obj = {"id": i, "text": []}
+    def insert_text_troops(self, data, translated_data):
+        for troop_data in translated_data:
+            troop_id = troop_data['id']
+            for page_data in troop_data['pages']:
+                page_id = page_data['id']
+                for list_item in page_data['list']:
+                    cmd_id = list_item['id']
+                    cmd = data[troop_id]['pages'][page_id]['list'][cmd_id]
+                    self.insert_text_map_item(cmd, list_item)
 
-        if iten['code'] in RPGMakerExtractor._codes_simple_extraction:
-            for param in iten['parameters']:
-                if not RPGMakerExtractor.ignore_text(param):
-                    title_match = RPGMakerExtractor.title_extraction_pattern.search(param)
-                    if title_match:
-                        groups = [group for group in title_match.groups() if group]
-                        if groups:
-                            title = groups[0]
-                            text = param[title_match.end():].strip()
-                            if text and not RPGMakerExtractor.ignore_text(title):
-                                list_obj['text'].append([title, text])
-                    elif any(param.startswith(key) for key in RPGMakerExtractor._text_keys):
-                        remaining_text = param.split(":", 1)[-1].strip()
-                        if (
-                            remaining_text and
-                            not RPGMakerExtractor.is_string_numeric(remaining_text) and
-                            not RPGMakerExtractor.is_string_boolean(remaining_text)):
-                            list_obj['text'].append(remaining_text)
-                    else:
-                        list_obj['text'].append(param)
+    _attributes_find = [r'name', r'note', r'profile', r'description', r'nickname', r'message\d{1}']
+    _attributes_system_find = ['armorTypes', 'equipTypes', 'gameTitle', 'skillTypes', 'terms', 'switches', 'elements', 'weaponTypes']
+    _note_tag_pattern = re.compile(fr'(<{re.escape("Desc")}|{re.escape("Help")}|{re.escape("Text")}|{re.escape("Profile")}|{re.escape("Message")}|{re.escape("Info")}[^:>]*):\s*([^>]+)>', re.IGNORECASE)
 
-        elif iten['code'] in RPGMakerExtractor._codes_first_element_extraction:
-            if not RPGMakerExtractor.ignore_text(iten['parameters'][0]):
-                cleaned_choices = []
-                for choice in iten['parameters'][0]:
-                    choice = choice.strip()
-                    match = RPGMakerExtractor._choice_condition_pattern.match(choice)
-                    if match:
-                        choice_text = choice[match.end():]
-                    else:
-                        choice_text = choice
-
-                    # Só adiciona se não for valor técnico
-                    if not RPGMakerExtractor.ignore_text(choice_text):
-                        cleaned_choices.append(choice_text)
-
-                # Só extrai se houver pelo menos uma escolha válida
-                if cleaned_choices:
-                    list_obj['text'] = cleaned_choices
-
-        elif iten['code'] in RPGMakerExtractor._codes_function_extraction:
-            funtions = [
-                "$gameVariables.setValue", "BattleManager._logWindow.push('addText'", 'mes = "', "text ="
-            ]
-            for func in funtions:
-                if iten['parameters'][0].startswith(func) and RPGMakerExtractor.quote_extraction_pattern.search(iten['parameters'][0]):
-                    find = RPGMakerExtractor.quote_extraction_pattern.findall(iten['parameters'][0])
-                    if find and len(find) == 2  and not RPGMakerExtractor.ignore_text(find[1]):
-                        list_obj['text'] = find[1][1:-1]
-                        break
-                    elif find and len(find) == 1 and find[0][1:-1] != 'addText' and not RPGMakerExtractor.ignore_text(find[0]):
-                        list_obj['text'] = find[0][1:-1]
-                        break
-
-            if RPGMakerExtractor._subject_pattern.search(iten['parameters'][0]):
-                extract_text = iten['parameters'][0][1:-1].split('_subject=')[1]
-                if not RPGMakerExtractor.ignore_text(extract_text):
-                    list_obj['text'] = extract_text
-
-        elif iten['code'] in RPGMakerExtractor._codes_second_element_extraction:
-            if not RPGMakerExtractor.ignore_text(iten['parameters'][1]):
-                list_obj['text'] = iten['parameters'][1]
-
-        elif iten['code'] in RPGMakerExtractor._codes_fifth_element_extraction:
-            if len(iten['parameters']) > 4 and \
-                iten['parameters'][4] and isinstance(iten['parameters'][4], str) and \
-                not RPGMakerExtractor.ignore_text(iten['parameters'][4]) and \
-                not RPGMakerExtractor.is_string_numeric(iten['parameters'][4]) and \
-                not RPGMakerExtractor.is_string_boolean(iten['parameters'][4]) and \
-                    (iten['parameters'][4].startswith(("'", '"', '`')) or iten['code'] == 101):
-
-                val = iten['parameters'][4]
-                if val.startswith(("'", '"', '`')):
-                     list_obj['text'] = val[1:-1]
-                else:
-                     list_obj['text'] = val
-
-        elif iten['code'] in RPGMakerExtractor._codes_prefix_extraction:
-            for compiled_prefix in RPGMakerExtractor._compiled_prefixes:
-                match = compiled_prefix.match(iten['parameters'][0])
-                if match:
-                    prefix_used = match.group(0)
-                    split_result = iten['parameters'][0].split(prefix_used + " ", 1)
-                    if len(split_result) > 1:
-                        find = split_result[1]
-                        if find and not RPGMakerExtractor.ignore_text(find) and not RPGMakerExtractor._variable_pattern.findall(find):
-                            list_obj['text'] = find
-                            break
-
-        elif iten['code'] in RPGMakerExtractor._codes_fourth_element:
-            if len(iten['parameters']) > 3 and \
-                iten['parameters'][3]:
-                if isinstance(iten['parameters'][3], dict):
-                    # Chaves conhecidas de plugins que NÃO devem ser traduzidas (configurações técnicas)
-                    technical_keys = {'switchTypeEX', 'switchIdEX', 'targetIdEX', 'variableIdEX',
-                                    'loop', 'smooth', 'volume', 'reload', 'autoplay', 'finishSwitch',
-                                    'fileName', 'pitch', 'pan', 'wait', 'repeat', 'skippable',
-                                    'WordWrap', 'FontFace', 'FontSize', 'TextSpeed', 'AutoColor',
-                                    'MessageRows', 'MessageWidth', 'ChoiceLineHeight', 'ChoiceRows',
-                                    'switchType', 'variableId', 'value', 'operation', 'operand'}
-
-                    # Chaves conhecidas que PODEM conter texto traduzível
-                    text_keys = {'text', 'message', 'description', 'title', 'name', 'label',
-                               'tooltip', 'help', 'content', 'body'}
-
-                    extracted_params = {}
-                    for p_key, p_val in iten['parameters'][3].items():
-                        # Ignora chaves técnicas conhecidas
-                        if p_key in technical_keys:
-                            continue
-
-                        # Extrai apenas se for string e não for valor técnico
-                        if isinstance(p_val, str) and not RPGMakerExtractor.ignore_text(p_val):
-                            # Se é uma chave conhecida de texto, sempre extrai
-                            if p_key in text_keys:
-                                extracted_params[p_key] = p_val
-                            # Se não é chave conhecida, só extrai se parecer texto real
-                            # (mais de 3 caracteres OU contém espaços OU contém pontos/vírgulas)
-                            elif len(p_val) > 3 or ' ' in p_val or any(c in p_val for c in '.,;:!?'):
-                                extracted_params[p_key] = p_val
-
-                    if extracted_params:
-                        if len(extracted_params) == 1 and 'text' in extracted_params:
-                             list_obj['text'] = extracted_params['text']
-                        else:
-                             list_obj['text'] = extracted_params
-
-        return list_obj
-
-    @staticmethod
-    def extract_text_map(new_json):
+    def extract_text_object(self, data):
         text = []
-        for item in new_json['events']:
-            if item:
-                event = {"id": item['id'], 'pages': []}
-                for i, page in enumerate(item['pages']):
-                    page_obj = {"id": i, "list": []}
-                    for j, list_item in enumerate(page['list']):
-                        text_obj = RPGMakerExtractor.extract_text_codes_item(list_item, j)
-                        if text_obj.get('text') and len(text_obj['text']) > 0:
-                            page_obj['list'].append(text_obj)
-                    if len(page_obj['list']) > 0:
-                        event['pages'].append(page_obj)
-                if len(event['pages']) > 0:
-                    text.append(event)
-        return text
-
-    @staticmethod
-    def insert_text_map_item(iten, list_item):
-        if iten['code'] in RPGMakerExtractor._codes_simple_extraction:
-            # Handle cases where list_item['text'] might be string (if manually edited) or list
-            texts_to_insert = list_item['text']
-            if isinstance(texts_to_insert, str):
-                texts_to_insert = [texts_to_insert]
-
-            if len(iten['parameters']) == 1 and len(texts_to_insert) >= 1:
-                 iten_text = iten['parameters'][0]
-                 new_text = texts_to_insert[0]
-                 if isinstance(new_text, list):
-                     new_text = new_text[1]
-
-                 match = RPGMakerExtractor.title_extraction_pattern.search(iten_text)
-                 if match:
-                    origin_title = [group for group in match.groups() if group][0]
-                    iten['parameters'][0] = iten_text.replace(iten_text[match.end():].strip(), str(new_text).strip())
-                 elif any(iten_text.startswith(key) for key in RPGMakerExtractor._text_keys):
-                    iten_text_parts = iten_text.split(":", 1)
-                    if len(iten_text_parts) > 1:
-                        iten['parameters'][0] = iten_text_parts[0] + ": " + str(new_text)
-                 else:
-                    iten['parameters'][0] = str(new_text)
-
-            elif isinstance(texts_to_insert, list) and len(texts_to_insert) > 0:
-                for iten_text, list_item_text in zip(iten['parameters'], texts_to_insert):
-                    match = RPGMakerExtractor.title_extraction_pattern.search(iten_text)
-                    if match:
-                        origin_title = [group for group in match.groups() if group][0]
-                        new_title = match.group(0).replace(origin_title, list_item_text[0])
-                        iten_text = iten_text.replace(match.group(0), new_title)
-                        iten_text = iten_text.split(new_title, 1)[0] + new_title + list_item_text[1]
-                        iten['parameters'] = [iten_text]
-                    else:
-                        iten['parameters'] = [list_item_text]
-
-        if iten['code'] in RPGMakerExtractor._codes_first_element_extraction:
-            if not RPGMakerExtractor.ignore_text(iten['parameters'][0]):
-                original_list = iten['parameters'][0]
-                translated_list = list_item['text']
-
-                if isinstance(translated_list, list) and len(original_list) == len(translated_list):
-                    final_list = []
-                    for orig, trans in zip(original_list, translated_list):
-                        orig_clean = orig.strip()
-                        match = RPGMakerExtractor._choice_condition_pattern.match(orig_clean)
-                        if match:
-                            prefix = match.group(0)
-                            # Remover espaços finais do prefixo e iniciais do texto
-                            # para garantir concatenação estrita se o original era assim
-                            prefix = prefix.rstrip()
-                            text_clean = str(trans).strip()
-                            final_list.append(prefix + text_clean)
-                        else:
-                            final_list.append(str(trans).strip())
-                    iten['parameters'][0] = final_list
-                else:
-                    iten['parameters'][0] = list_item['text']
-
-        if iten['code'] in RPGMakerExtractor._codes_function_extraction:
-            if RPGMakerExtractor.quote_extraction_pattern.search(iten['parameters'][0]):
-                text_to_insert = list_item["text"]
-                if isinstance(text_to_insert, list):
-                    text_to_insert = " ".join(text_to_insert)
-
-                iten['parameters'][0] = re.sub(
-                    RPGMakerExtractor.quote_extraction_pattern,
-                    lambda m: f'\'{text_to_insert[::-1]}\'',
-                    iten['parameters'][0][::-1],
-                    count=1
-                )[::-1]
-
-            elif RPGMakerExtractor._subject_pattern.search(iten['parameters'][0]):
-                text_parts = iten['parameters'][0].split('_subject=')
-                text_to_insert = list_item["text"]
-                if isinstance(text_to_insert, list):
-                    text_to_insert = " ".join(text_to_insert)
-                text_parts[1] = f'{text_to_insert}"'
-                iten['parameters'][0] = '_subject='.join(text_parts)
-
-        if iten['code'] in RPGMakerExtractor._codes_second_element_extraction:
-            iten['parameters'][1] = list_item['text']
-
-        if iten['code'] in RPGMakerExtractor._codes_fifth_element_extraction:
-            val = iten['parameters'][4]
-            if val and isinstance(val, str) and val.startswith(("'", '"', '`')):
-                 iten['parameters'][4] = f'\"{list_item["text"]}"'
-            else:
-                 iten['parameters'][4] = list_item['text']
-
-        if iten['code'] in RPGMakerExtractor._codes_prefix_extraction:
-            for compiled_prefix in RPGMakerExtractor._compiled_prefixes:
-                match = compiled_prefix.match(iten['parameters'][0])
-                if match:
-                    prefix_used = match.group(0)
-                    iten['parameters'][0] = f'{prefix_used} {list_item["text"]}'
-                    break
-
-        if iten['code'] in RPGMakerExtractor._codes_fourth_element:
-            # MZ Plugin Command insertion
-            if len(iten['parameters']) > 3 and \
-                iten['parameters'][3] and isinstance(iten['parameters'][3], dict):
-
-                if isinstance(list_item['text'], dict):
-                    # New generalized logic
-                    for key, val in list_item['text'].items():
-                        if key in iten['parameters'][3]:
-                            iten['parameters'][3][key] = val
-                elif 'text' in iten['parameters'][3] and isinstance(list_item['text'], str):
-                    # Fallback legacy logic
-                    iten['parameters'][3]['text'] = list_item['text']
-
-    @staticmethod
-    def insert_text_map(new_json, new_data):
-        for texts in new_data:
-            for page in texts['pages']:
-                for list_item in page['list']:
-                    value = new_json['events'][texts['id']]['pages'][page['id']]['list'][list_item['id']]
-                    RPGMakerExtractor.insert_text_map_item(value, list_item)
-
-    @staticmethod
-    def extract_text_common_events(new_json):
-        text = []
-        for item in new_json:
-            if item:
-                event = {"id": item['id'], 'list': []}
-                for i, list_item in enumerate(item['list']):
-                    text_obj = RPGMakerExtractor.extract_text_codes_item(list_item, i)
-                    if text_obj.get('text') and len(text_obj['text']) > 0:
-                        event['list'].append(text_obj)
-                if len(event['list']) > 0:
-                    text.append(event)
-        return text
-
-    @staticmethod
-    def insert_text_common_events(new_json, new_data):
-        for texts in new_data:
-            for list_item in texts['list']:
-                value = new_json[texts['id']]['list'][list_item['id']]
-                RPGMakerExtractor.insert_text_map_item(value, list_item)
-
-    @staticmethod
-    def extract_text_troops(new_json):
-        text = []
-        for item in new_json:
-            if item:
-                object = {"id": item['id'], 'pages': []}
-                for i, page in enumerate(item['pages']):
-                    page_obj = {"id": i, "list": []}
-                    for j, list_item in enumerate(page['list']):
-                        text_obj = RPGMakerExtractor.extract_text_codes_item(list_item, j)
-                        if text_obj.get('text') and len(text_obj['text']) > 0:
-                            page_obj['list'].append(text_obj)
-                    if len(page_obj['list']) > 0:
-                        object['pages'].append(page_obj)
-                if len(object['pages']) > 0:
-                    text.append(object)
-        return text
-
-    @staticmethod
-    def insert_text_troops(new_json, new_data):
-        for texts in new_data:
-            for page in texts['pages']:
-                for list_item in page['list']:
-                    value = new_json[texts['id']]['pages'][page['id']]['list'][list_item['id']]
-                    RPGMakerExtractor.insert_text_map_item(value, list_item)
-
-    @staticmethod
-    def extract_text_object(new_json):
-        text = []
-        for item in new_json:
+        for item in data:
             if item and item.get('name', '') != '':
                 obj = {'id': item['id']}
-                for key in item.keys():
-                    # Check for standard attributes
-                    if any(re.match(pattern, key) for pattern in RPGMakerExtractor._attributes_find):
-
-                        # Special handling for 'note' to extract only tag contents
-                        if key == 'note':
-                            if item[key]:
-                                matches = RPGMakerExtractor._note_tag_pattern.findall(item[key])
-                                if matches:
-                                    # Store matches as a dictionary {Tag: Content} for context
-                                    # or simplified key for translation
-                                    note_data = {}
-                                    for tag, content in matches:
-                                        note_data[tag] = content
-                                    if note_data:
-                                        obj[key] = note_data
-
-                        elif not RPGMakerExtractor.ignore_text(item[key]):
-                            obj[key] = item[key]
-
+                for key, val in item.items():
+                    if any(re.match(pattern, key) for pattern in self._attributes_find):
+                        if key == 'note' and val:
+                            matches = self._note_tag_pattern.findall(val)
+                            if matches:
+                                note_data = {tag: content for tag, content in matches}
+                                if note_data: obj[key] = note_data
+                        elif not RPGTextFilters.is_technical_or_code(val):
+                            obj[key] = val
                 if len(obj) > 1:
                     text.append(obj)
         return text
 
-    @staticmethod
-    def insert_text_object(new_json, new_data):
-        for texts in new_data:
-            # Handle Note reconstruction carefully
+    def insert_text_object(self, data, translated_data):
+        for texts in translated_data:
+            item_id = texts['id']
             if 'note' in texts and isinstance(texts['note'], dict):
-                original_note = new_json[texts['id']].get('note', '')
-                translated_notes = texts['note']
-
-                for tag, new_content in translated_notes.items():
-                    # Replace content for specific tag: <Tag: OldContent> -> <Tag: NewContent>
+                original_note = data[item_id].get('note', '')
+                for tag, new_content in texts['note'].items():
                     pattern = re.compile(fr'(<{re.escape(tag)}\s*:\s*)([^>]+)(>)', re.IGNORECASE)
                     original_note = pattern.sub(lambda m: f"{m.group(1)}{new_content}{m.group(3)}", original_note)
-
-                new_json[texts['id']]['note'] = original_note
-                # Remove note from texts to avoid overwriting by the generic update below if we want to be safe
-                # But the generic update below does {**new_json... **texts}.
-                # We need to update 'texts' to have the FULL note string now, or remove 'note' from 'texts'.
-                # Simplest is to update 'texts' with the fully reconstructed string.
+                data[item_id]['note'] = original_note
                 texts['note'] = original_note
+            data[item_id].update(texts)
 
-            new_json[texts['id']] = {**new_json[texts['id']],**texts}
-
-    @staticmethod
-    def extract_text_System(new_json):
+    def extract_text_System(self, data):
         text = {}
-        for key, value in new_json.items():
-            if key in RPGMakerExtractor._attributes_system_find:
+        for key, value in data.items():
+            if key in self._attributes_system_find:
                 text[key] = value
         return text
 
-    @staticmethod
-    def insert_text_System(new_json, new_data):
-        for key, value in new_data.items():
-            if key in RPGMakerExtractor._attributes_system_find:
+    def insert_text_System(self, data, translated_data):
+        for key, value in translated_data.items():
+            if key in self._attributes_system_find:
                 if isinstance(value, list):
                     for i, item in enumerate(value):
-                        if (i < len(new_json[key]) and
-                            isinstance(new_json[key][i], str) and
-                            RPGMakerExtractor.ignore_text(new_json[key][i])):
-                            value[i] = new_json[key][i]
-                new_json[key] = value
+                        if i < len(data[key]) and RPGTextFilters.is_technical_or_code(data[key][i]):
+                            value[i] = data[key][i]
+                data[key] = value
 
-    extract_map = [
-        {
-            "file_patterns": [r'Map\d{3,}'],
-            "target_codes": _codes_find,
-            "extractor": extract_text_map,
-            "insert": insert_text_map,
-        },
-        {
-            "file_patterns": [r'CommonEvents'],
-            "target_codes": _codes_find,
-            "extractor": extract_text_common_events,
-            "insert": insert_text_common_events,
-        },
-        {
-            "file_patterns": [r'Troops'],
-            "target_codes": _codes_find,
-            "extractor": extract_text_troops,
-            "insert": insert_text_troops,
-        },
-        {
-            "file_patterns": [r'MapInfos', r'Weapons', r'Items', r'Weapons', r'Skills', r'States', r'Enemies', r'Actors', r'Armors',],
-            "target_codes": _attributes_find,
-            "extractor": extract_text_object,
-            "insert": insert_text_object,
-        },
-        {
-            "file_patterns": [r'System'],
-            "target_codes": _attributes_system_find,
-            "extractor": extract_text_System,
-            "insert": insert_text_System,
-        }
-    ]
+    @property
+    def extract_map(self):
+        return [
+            {"file_patterns": [r'Map\d{3,}'], "extractor": self.extract_text_map, "insert": self.insert_text_map},
+            {"file_patterns": [r'CommonEvents'], "extractor": self.extract_text_common_events, "insert": self.insert_text_common_events},
+            {"file_patterns": [r'Troops'], "extractor": self.extract_text_troops, "insert": self.insert_text_troops},
+            {"file_patterns": [r'MapInfos', r'Weapons', r'Items', r'Skills', r'States', r'Enemies', r'Actors', r'Armors'], "extractor": self.extract_text_object, "insert": self.insert_text_object},
+            {"file_patterns": [r'System'], "extractor": self.extract_text_System, "insert": self.insert_text_System}
+        ]
 
     def extract_text(self, file_name, new_json):
-        for item in RPGMakerExtractor.extract_map:
-            for file_pattern in item['file_patterns']:
-                if re.search(file_pattern, file_name):
-                    return item['extractor'](new_json)
+        for item in self.extract_map:
+            if any(re.search(p, file_name) for p in item['file_patterns']):
+                return item['extractor'](new_json)
         return None
 
     def update_json(self, file_name, new_json, new_data):
-        for item in RPGMakerExtractor.extract_map:
-            for file_pattern in item['file_patterns']:
-                if re.search(file_pattern, file_name):
-                    item['insert'](new_json, new_data)
-                    return new_json
+        for item in self.extract_map:
+            if any(re.search(p, file_name) for p in item['file_patterns']):
+                item['insert'](new_json, new_data)
+                return new_json
         return new_json
 
     @staticmethod
     def fix_text_translate(texts, original_texts=None):
-        """
-        Corrige textos traduzidos restaurando a capitalização correta de variáveis e código.
-        """
         texts_list = TextsUtils.dictToList(texts)
         original_list = TextsUtils.dictToList(original_texts) if original_texts else None
 
-        _format_codes_pattern = re.compile(
-            r'\\([A-Za-z]{1,3})(?:\s*(\[[^\]]*\]))?',
-            re.IGNORECASE
-        )
+        _format_codes_pattern = re.compile(r'\\([A-Za-z]{1,3})(?:\s*(\[[^\]]*\]))?', re.IGNORECASE)
+        _format_upper = {'c', 'v', 'i', 'ce', 'm', 'n', 'p', 'g'}
 
         _compiled_patterns = [
-            (re.compile(r'\\\s+'), lambda m: '\\'),
-            (re.compile(r'(?i)\bif\s*\('), lambda m: 'if('),
-            (re.compile(r'"\s+"'), lambda m: '""'),
-            (re.compile(r'\\n\s+'), lambda m: '\\n'),
-            (re.compile(r'\s*_\s*'), lambda m: '_'),
-            (re.compile(r'<\s*>'), lambda m: '<>'),
-            (re.compile(r'\$\s+'), lambda m: '$'),
-            (re.compile(r'>\s*='), lambda m: '>='),
-            (re.compile(r'<\s*='), lambda m: '<='),
-            (re.compile(r'!\s*='), lambda m: '!='),
-            (re.compile(r'=\s*='), lambda m: '=='),
+            (re.compile(r'\\\s+'), r'\\'), (re.compile(r'(?i)\bif\s*\('), 'if('),
+            (re.compile(r'"\s+"'), '""'), (re.compile(r'\\n\s+'), '\\n'),
+            (re.compile(r'\s*_\s*'), '_'), (re.compile(r'<\s*>'), '<>'),
+            (re.compile(r'\$\s+'), '$'), (re.compile(r'>\s*='), '>='),
+            (re.compile(r'<\s*='), '<='), (re.compile(r'!\s*='), '!='),
+            (re.compile(r'=\s*='), '=='),
         ]
 
-        _game_objects = {
-            'variables': 'Variables',
-            'switches': 'Switches',
-            'party': 'Party',
-            'actors': 'Actors',
-            'player': 'Player',
-            'map': 'Map',
-            'system': 'System',
-            'screen': 'Screen',
-            'timer': 'Timer',
-            'message': 'Message',
-            'temp': 'Temp',
-            'troop': 'Troop',
-            'interpreter': 'Interpreter',
-        }
-
-        _game_pattern = re.compile(
-            r'\$game(' + '|'.join(_game_objects.keys()) + r')\b',
-            re.IGNORECASE
-        )
-
+        _game_objects = {k: k.capitalize() for k in ['variables', 'switches', 'party', 'actors', 'player', 'map', 'system', 'screen', 'timer', 'message', 'temp', 'troop', 'interpreter']}
+        _game_pattern = re.compile(r'\$game(' + '|'.join(_game_objects.keys()) + r')\b', re.IGNORECASE)
         _property_pattern = re.compile(r'\.([_a-zA-Z][_a-zA-Z0-9]*)(?=[\[\(\.]|\s|$)')
-
-        _code_pattern = re.compile(
-            r'(\$game\s*[a-zA-Z]+(?:\s*\.\s*[_a-zA-Z][_a-zA-Z0-9]*(?:\s*\[\s*[^\\\]]+\s*\])?)*|'
-            r'\$\s*[a-z]+[A-Z][a-zA-Z]*|'
-            r'!(?<!\\)\b[A-Za-z]{1,2}\s*\[\s*\d+\s*\]|'
-            r'(?<!\\)(?<!!)\b[A-Za-z]{1,2}\s*\[\s*\d+\s*\])',
-            re.IGNORECASE
-        )
+        _code_pattern = re.compile(r'(\$game\s*[a-zA-Z]+(?:\s*\.\s*[_a-zA-Z][_a-zA-Z0-9]*(?:\s*\[\s*[^\\\]]+\s*\])?)*|\$\s*[a-z]+[A-Z][a-zA-Z]*|!(?<!\\)\b[A-Za-z]{1,2}\s*\[\s*\d+\s*\]|(?<!\\)(?<!!)\b[A-Za-z]{1,2}\s*\[\s*\d+\s*\])', re.IGNORECASE)
 
         for i, text in enumerate(texts_list):
-            if not isinstance(text, str):
-                continue
-
+            if not isinstance(text, str): continue
             original_text = original_list[i] if original_list and i < len(original_list) else None
 
-            # Códigos de formato que devem ser mantidos em UPPERCASE
-            # c: cor, v: variável, i: ícone, ce: center, m: mensagem externa
-            _format_upper = {'c', 'v', 'i', 'ce', 'm', 'n', 'p', 'g'}
-
-            def fix_format_code(match):
-                name = match.group(1)
-                params = match.group(2) or ''  # Pode ser None se não houver colchetes
-                chosen = name.upper() if name.lower() in _format_upper else name.lower()
-                return f'\\{chosen}{params}'
-
-            text = _format_codes_pattern.sub(fix_format_code, text)
-
-            for pattern, repl in _compiled_patterns:
-                text = pattern.sub(repl, text)
+            text = _format_codes_pattern.sub(lambda m: f'\\{m.group(1).upper() if m.group(1).lower() in _format_upper else m.group(1).lower()}{m.group(2) or ""}', text)
+            for pattern, repl in _compiled_patterns: text = pattern.sub(repl, text)
 
             boolean_corrections = {
-                r'\b(?:verdadeiro|verdadeira)\b': 'true',
-                r'\b(?:falso|falsa)\b': 'false',
-                r'\b(?:nulo|nula)\b': 'null',
-                r'\bindefinido\b': 'undefined',
-                r'\b(?:verdadero|verdadera)\b': 'true',
-                r'\b(?:falso|falsa)\b': 'false',
-                r'\bnulo\b': 'null',
-                r'\bindefinido\b': 'undefined',
-                r'\b(?:vrai|vraie)\b': 'true',
-                r'\b(?:faux|fausse)\b': 'false',
-                r'\bnul\b': 'null',
-                r'\bindéfini\b': 'undefined',
+                r'\b(?:verdadeiro|verdadeira|verdadero|verdadera|vrai|vraie)\b': 'true',
+                r'\b(?:falso|falsa|faux|fausse)\b': 'false',
+                r'\b(?:nulo|nula|nul)\b': 'null',
+                r'\b(?:indefinido|indéfini)\b': 'undefined',
             }
-
             for pattern, replacement in boolean_corrections.items():
                 text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
             if original_text:
-                original_codes = {}
-                for match in _code_pattern.finditer(original_text):
+                original_codes = {re.sub(r'\s+', '', m.group(0)).lower(): m.group(0) for m in _code_pattern.finditer(original_text)}
+                def restore_code(match):
                     code = match.group(0)
                     key = re.sub(r'\s+', '', code).lower()
-                    if key not in original_codes:
-                        original_codes[key] = code
+                    return original_codes.get(key, re.sub(r'\s+', '', code))
+                text = _code_pattern.sub(restore_code, text)
 
-                def restore_original_code(match):
-                    code = match.group(0)
-                    key = re.sub(r'\s+', '', code).lower()
-
-                    if '\\' in code:
-                        try:
-                            m_fmt = re.match(r'(!)?(\\)\s*([A-Za-z]{1,3})(\s*\[.*\])', code)
-                            if m_fmt:
-                                bang = m_fmt.group(1) or ''
-                                name = m_fmt.group(3)
-                                params = m_fmt.group(4) or ''
-                                chosen = name.upper() if name.lower() in _format_upper else name.lower()
-                                return f"{bang}\\{chosen}{params}"
-                        except Exception:
-                            pass
-
-                    if key in original_codes:
-                        return original_codes[key]
-
-                    try:
-                        def _norm_token(m):
-                            bang = m.group(1) or ''
-                            name = m.group(2)
-                            num = m.group(3)
-                            return f"{bang}{name}[{num}]"
-                        code_clean = re.sub(r'(!)?([A-Za-z]{1,2})\s*\[\s*(\d+)\s*\]', _norm_token, code, flags=re.IGNORECASE)
-                        return code_clean
-                    except Exception:
-                        return re.sub(r'\s+', '', code)
-
-                if original_codes:
-                    text = _code_pattern.sub(restore_original_code, text)
-
-            def fix_game_object(match):
-                obj_name = match.group(1).lower()
-                return f'$game{_game_objects.get(obj_name, match.group(1))}'
-
-            text = _game_pattern.sub(fix_game_object, text)
-
+            text = _game_pattern.sub(lambda m: f'$game{_game_objects.get(m.group(1).lower(), m.group(1))}', text)
             if not original_text:
-                def fix_property(match):
-                    prop = match.group(1)
-                    if prop.isupper() or (len(prop) > 1 and prop[0].isupper() and '_' in prop):
-                        return '.' + prop.lower()
-                    return match.group(0)
-
-                text = _property_pattern.sub(fix_property, text)
+                text = _property_pattern.sub(lambda m: '.' + m.group(1).lower() if m.group(1).isupper() or (len(m.group(1)) > 1 and m.group(1)[0].isupper() and '_' in m.group(1)) else m.group(0), text)
 
             texts_list[i] = text
-
-            try:
-                code_triggers = ['if(', 'var ', 'return', '=>', 'function', 'mes =', 'text =']
-                if any(t in text for t in code_triggers):
+            if any(t in text for t in ['if(', 'var ', 'return', '=>', 'function', 'mes =', 'text =']):
+                try:
                     parts = re.split(r'(".*?"|".*?")', text)
-                    for j in range(len(parts)):
-                        if j % 2 == 0:
-                            parts[j] = re.sub(r'\b0+([1-9]\d*)\b', r'\1', parts[j])
-                            parts[j] = re.sub(r'\b00+\b', '0', parts[j])
-                    text = ''.join(parts)
-                    texts_list[i] = text
-            except Exception as e:
-                logging.warning(f'Erro ao sanitizar literais octais: {e}')
+                    for j in range(0, len(parts), 2):
+                        parts[j] = re.sub(r'\b0+([1-9]\d*)\b', r'\1', parts[j])
+                        parts[j] = re.sub(r'\b00+\b', '0', parts[j])
+                    texts_list[i] = ''.join(parts)
+                except Exception as e: logging.warning(f'Erro ao sanitizar literais octais: {e}')
 
         TextsUtils.interactive_item(texts, texts_list)

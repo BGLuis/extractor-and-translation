@@ -42,7 +42,7 @@ class BaseExtractor(ABC):
     def extract_files(cls, file_path):
         if not file_path.endswith(tuple(cls.files_types)):
             return [os.path.basename(file_path), None]
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
             data = json.load(f)
             return [os.path.basename(file_path), data]
 
@@ -106,21 +106,45 @@ class BaseExtractor(ABC):
 
     @staticmethod
     def merge_dicts_texts(dict1, dict2):
+        if not isinstance(dict2, (dict, list)):
+            return dict1
+
+        if isinstance(dict2, list):
+            merged_list = dict2.copy()
+            for i, value in enumerate(dict1):
+                if i >= len(merged_list):
+                    merged_list.append(value)
+                    continue
+
+                if isinstance(value, str):
+                    merged_list[i] = value
+                elif isinstance(value, (dict, list)):
+                    merged_list[i] = BaseExtractor.merge_dicts_texts(value, merged_list[i])
+            return merged_list
+
         merged_dict = dict2.copy()
-        haystack = dict1.items() if isinstance(dict1, dict) else enumerate(dict1)
+        haystack = dict1.items()
         for key, value in haystack:
             if isinstance(value, str):
                 if key in merged_dict and merged_dict[key] != value:
                     merged_dict[f"{key}_old"] = merged_dict[key]
                 merged_dict[key] = value
             elif isinstance(value, dict):
-                merged_dict[key] = BaseExtractor.merge_dicts_texts(value, merged_dict[key])
+                merged_dict[key] = BaseExtractor.merge_dicts_texts(value, merged_dict.get(key, {}))
             elif isinstance(value, list):
+                if key not in merged_dict:
+                    merged_dict[key] = value
+                    continue
+                
                 for i, item in enumerate(value):
-                    if isinstance(item, dict) or isinstance(item, list):
-                        merged_dict[key][i] = BaseExtractor.merge_dicts_texts(value[i], merged_dict[key][i])
+                    if i >= len(merged_dict[key]):
+                        merged_dict[key].append(item)
+                        continue
+
+                    if isinstance(item, (dict, list)):
+                        merged_dict[key][i] = BaseExtractor.merge_dicts_texts(item, merged_dict[key][i])
                     else:
-                        if key in merged_dict and merged_dict[key][i] != item:
+                        if merged_dict[key][i] != item:
                             if f"{key}_old" not in merged_dict:
                                 merged_dict[f"{key}_old"] = []
                             merged_dict[f"{key}_old"].append(merged_dict[key][i])

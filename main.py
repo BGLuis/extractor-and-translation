@@ -43,6 +43,13 @@ def delete_file_folder(pasta):
             os.remove(caminho)
 
 def copy_files_only(src, dst):
+    src_real = os.path.realpath(src)
+    dst_real = os.path.realpath(dst)
+
+    # Evita apagar os arquivos quando origem e destino apontam para a mesma pasta.
+    if src_real == dst_real:
+        return
+
     if not os.path.exists(dst):
         os.makedirs(dst)
 

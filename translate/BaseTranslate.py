@@ -193,6 +193,17 @@ class BaseTranslate(ABC):
             batches = self._create_batches(non_cached_texts)
             translated_results = self.translate_batch_parallel(batches, progress_callback)
 
+            # Proteção de integridade: se o total divergir, faz fallback 1:1
+            # para evitar desalinhamento entre textos e traduções no cache.
+            if len(translated_results) != len(non_cached_texts):
+                translated_results = []
+                for text in non_cached_texts:
+                    try:
+                        single = self._translate_single_batch([text])
+                        translated_results.append(single[0] if single else text)
+                    except Exception:
+                        translated_results.append(text)
+
             # 3. Merge results back
             # We must be careful if translated_results count matches non_cached_texts count
             # Ideally they should match 1-to-1 if _translate_single_batch works correctly

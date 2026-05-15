@@ -5,7 +5,8 @@ import commun.TextsUtils as TextsUtils
 
 class GoogleTranslate(BaseTranslate):
     agent = 'googleTraslator'
-    MAX_REQUESTS_SIMULTANEOUSLY = 9
+    # Evita inconsistências em lotes com o cliente HTTP compartilhado.
+    MAX_REQUESTS_SIMULTANEOUSLY = 7
 
     @classmethod
     def requires_synopsis(cls):
@@ -41,6 +42,14 @@ class GoogleTranslate(BaseTranslate):
         list_join = self.delimiter.join(texts)
         translate_str = self.translate_client.translate(list_join)
         translate_list = translate_str.split(self.delimiter)
+
+        # Se o delimitador for alterado pelo provedor, o batch pode ficar desalinhado.
+        # Nessa situação, traduzimos item a item para manter mapeamento correto.
+        if len(translate_list) != len(texts):
+            safe_results = []
+            for text in texts:
+                safe_results.append(self.translate_client.translate(text))
+            return safe_results
 
         return translate_list
 

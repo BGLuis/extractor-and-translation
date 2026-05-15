@@ -15,16 +15,21 @@ class JsonExtractor(BaseExtractor):
 
     @staticmethod
     def extract_text(file_name, data):
-        if not isinstance(data, dict):
+        if not isinstance(data, (dict, list)):
             return None
         return data
 
     @staticmethod
     def update_json(file_name, data, new_data):
-        if not isinstance(data, dict) or not isinstance(new_data, dict):
+        if not isinstance(data, (dict, list)) or not isinstance(new_data, (dict, list)):
             return None
-        data.update(JsonExtractor.remove_old_keys(new_data))
-        return data
+        
+        cleaned_data = BaseExtractor.remove_old_keys(new_data)
+        if isinstance(data, dict):
+            data.update(cleaned_data)
+            return data
+        else:
+            return cleaned_data
 
     @staticmethod
     def fix_text_translate(text, original_text=None):
