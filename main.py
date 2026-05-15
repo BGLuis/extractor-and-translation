@@ -10,25 +10,31 @@ import argparse
 import sys
 
 lang_options = {
-    'portugues': 'pt',
-    'ingles': 'en',
-    'espanhol': 'es',
-    'frances': 'fr',
-    'italiano': 'it',
-    'japones': 'ja',
-    'automatico': 'auto'
+    'Português': 'pt',
+    'Inglês': 'en',
+    'Espanhol': 'es',
+    'Francês': 'fr',
+    'Italiano': 'it',
+    'Japonês': 'ja',
+    'Automático (Detectar)': 'auto'
 }
 
 def get_subclasses_map(cls, key_attr='name'):
     return {getattr(sub, key_attr): sub for sub in cls.__subclasses__()}
 
 def remove_lang_options(lang_source):
-    for key in lang_options.keys():
+    """Remove o idioma de origem e a opção 'auto' da lista de destino"""
+    # Remove o idioma selecionado como origem
+    for key in list(lang_options.keys()):
         if lang_options[key] == lang_source:
             lang_options.pop(key)
             break
+            
+    # Se a origem não for auto, remove o auto do destino
     if lang_source != 'auto':
-        lang_options.pop('automatico')
+        auto_keys = [k for k, v in lang_options.items() if v == 'auto']
+        for k in auto_keys:
+            lang_options.pop(k)
 
 def copy_file(src, dst):
     shutil.copy(src, dst)
@@ -152,113 +158,109 @@ def validate_arguments(args):
     return errors
 
 
-def run_interactive_mode():
-    extractor = cli.select_option("Que Tipo de extrator de Texto vc gostaria:", get_subclasses_map(BaseExtractor, 'name'))
-    translator = cli.select_option("Que Tipo de agente de tradução vc gostaria:", get_subclasses_map(BaseTranslate, 'agent'))
-    translate = translator()
+def run_workflow(args):
+    """
+    Fluxo de trabalho unificado que usa argumentos CLI se fornecidos,
+    caso contrário, solicita ao usuário de forma interativa.
+    """
+    extractors = get_subclasses_map(BaseExtractor, 'name')
+    translators = get_subclasses_map(BaseTranslate, 'agent')
 
-    lang_source = cli.select_option("Selecione o idioma de origem:", lang_options)
+    # 1. Selecionar Extrator
+    if args.extractor and args.extractor in extractors:
+        extractor_class = extractors[args.extractor]
+    else:
+        extractor_class = cli.select_option("Selecione o extrator de texto:", extractors)
+        if extractor_class == "Exit": return False
+
+    # 2. Selecionar Tradutor
+    if args.translator and args.translator in translators:
+        translator_class = translators[args.translator]
+    else:
+        translator_class = cli.select_option("Selecione o tradutor:", translators)
+        if translator_class == "Exit": return False
+
+    translate = translator_class()
+
+    # 3. Selecionar Idioma de Origem
+    if args.source and args.source in lang_options.values():
+        lang_source = args.source
+    else:
+        lang_source = cli.select_option("Selecione o idioma de origem:", lang_options)
+        if lang_source == "Exit": return False
+
     remove_lang_options(lang_source)
-    lang_target = cli.select_option("Selecione o idioma de destino:", lang_options)
+
+    # 4. Selecionar Idioma de Destino
+    if args.target and args.target in lang_options.values():
+        lang_target = args.target
+    else:
+        lang_target = cli.select_option("Selecione o idioma de destino:", lang_options)
+        if lang_target == "Exit": return False
 
     translate.change_language(lang_source, lang_target)
 
-    translator_questions = translator.get_interactive_questions()
-    if translator_questions:
-        cli.clear_screen()
-        translator_config = {}
-
-        for question in translator_questions:
-            if 'title' in question:
-                cli.print_colored_line(question['title'], 'cyan')
-
-            if 'description' in question:
-                color = question.get('color', 'yellow')
-                cli.print_colored_line(question['description'], color)
-
-            cli.print_colored_line(question['question'], question.get('color', 'white'))
-
-            answer = input().strip()
-            if answer or not question.get('required', False):
-                translator_config[question['key']] = answer
-                if answer:
-                    cli.print_colored_line(f"\n✓ {question['key'].capitalize()} configurado com sucesso!", 'green')
+    # 5. Configuração do Tradutor
+    if args.synopsis:
+        translate.apply_configuration({'synopsis': args.synopsis})
+        cli.print_colored_line(f"✓ Sinopse configurada via CLI", 'green')
+    else:
+        translator_questions = translator_class.get_interactive_questions()
+        if translator_questions:
+            cli.clear_screen()
+            translator_config = {}
+            for question in translator_questions:
+                if 'title' in question: cli.print_colored_line(question['title'], 'cyan')
+                if 'description' in question: cli.print_colored_line(question['description'], question.get('color', 'yellow'))
+                cli.print_colored_line(question['question'], question.get('color', 'white'))
+                answer = input().strip()
+                if answer or not question.get('required', False):
+                    translator_config[question['key']] = answer
                 else:
-                    cli.print_colored_line(f"\n⚠ Continuando sem {question['key']}.", 'yellow')
-            else:
-                cli.print_colored_line(f"\n✗ {question['key'].capitalize()} é obrigatório!", 'red')
-                return False
+                    cli.print_colored_line(f"\n✗ {question['key'].capitalize()} é obrigatório!", 'red')
+                    return False
+            translate.apply_configuration(translator_config)
 
-        translate.apply_configuration(translator_config)
-
-    cli.clear_screen()
-    extractor = extractor(translate)
-
+    # 6. Configuração do Extrator
+    extractor = extractor_class(translate)
     extractor_questions = extractor.get_interactive_questions()
     if extractor_questions:
         cli.clear_screen()
         extractor_config = {}
-
         for question in extractor_questions:
-            if 'title' in question:
-                cli.print_colored_line(question['title'], 'cyan')
-
-            if 'description' in question:
-                color = question.get('color', 'yellow')
-                cli.print_colored_line(question['description'], color)
-
+            if 'title' in question: cli.print_colored_line(question['title'], 'cyan')
+            if 'description' in question: cli.print_colored_line(question['description'], question.get('color', 'yellow'))
             cli.print_colored_line(question['question'], question.get('color', 'white'))
-
             answer = input().strip()
             if answer or not question.get('required', False):
                 extractor_config[question['key']] = answer
-                if answer:
-                    cli.print_colored_line(f"\n✓ {question['key'].capitalize()} configurado com sucesso!", 'green')
-                else:
-                    cli.print_colored_line(f"\n⚠ Continuando sem {question['key']}.", 'yellow')
             else:
                 cli.print_colored_line(f"\n✗ {question['key'].capitalize()} é obrigatório!", 'red')
                 return False
-
         extractor.apply_configuration(extractor_config)
 
     extractor.init_folder()
 
-    cli.instruction(f"Precione enter para selecionar a pasta de entrada dos arquivos")
-    dir = cli.select_folder("Selecione a pasta de entrada dos arquivos")
-    if dir is None:
-        cli.print_colored_line("Nenhuma pasta selecionada. Encerrando o programa.", 'red')
-        return False
+    # 7. Selecionar Pasta de Entrada
+    if args.input and os.path.exists(args.input):
+        input_dir = args.input
+    else:
+        cli.instruction(f"Pressione enter para selecionar a pasta de entrada dos arquivos")
+        input_dir = cli.select_folder("Selecione a pasta de entrada dos arquivos")
+        if input_dir is None:
+            cli.print_colored_line("Nenhuma pasta selecionada. Encerrando o programa.", 'red')
+            return False
 
-    return run_extraction_process(extractor, translate, dir, lang_source, backup=True, verify=True)
-
-
-def run_command_line_mode(args):
-    extractors = get_subclasses_map(BaseExtractor, 'name')
-    translators = get_subclasses_map(BaseTranslate, 'agent')
-
-    extractor_class = extractors[args.extractor]
-    translator_class = translators[args.translator]
-
-    translate = translator_class()
-    translate.change_language(args.source, args.target)
-
-    if args.synopsis:
-        config = {'synopsis': args.synopsis}
-        translate.apply_configuration(config)
-        cli.print_colored_line(f"✓ Sinopse configurada", 'green')
-
-    extractor = extractor_class(translate)
-    extractor.init_folder()
-
-    cli.print_colored_line(f"Usando extrator: {args.extractor}", 'cyan')
-    cli.print_colored_line(f"Usando tradutor: {args.translator}", 'cyan')
-    cli.print_colored_line(f"Traduzindo de {args.source} para {args.target}", 'cyan')
-    cli.print_colored_line(f"Pasta de entrada: {args.input}", 'cyan')
+    # 8. Executar Processo
+    cli.clear_screen()
+    cli.print_colored_line(f"Usando extrator: {extractor_class.name}", 'cyan')
+    cli.print_colored_line(f"Usando tradutor: {translator_class.agent}", 'cyan')
+    cli.print_colored_line(f"Traduzindo de {lang_source} para {lang_target}", 'cyan')
+    cli.print_colored_line(f"Pasta de entrada: {input_dir}", 'cyan')
 
     return run_extraction_process(
-        extractor, translate, args.input, args.source,
-        backup=not args.no_backup,
+        extractor, translate, input_dir, lang_source, 
+        backup=not args.no_backup, 
         verify=not args.no_verify
     )
 
@@ -297,49 +299,38 @@ def run_extraction_process(extractor, translate, input_dir, lang_source, backup=
 if __name__ == '__main__':
     args = parse_arguments()
 
+    # Opções de listagem
     if args.list_extractors or args.list_translators or args.list_languages:
-        if args.list_extractors:
-            print("\n=== EXTRATORES DISPONÍVEIS ===")
-            extractors = get_subclasses_map(BaseExtractor, 'name')
-            for name in extractors.keys():
-                print(f"  - {name}")
-
-        if args.list_translators:
-            print("\n=== TRADUTORES DISPONÍVEIS ===")
-            translators = get_subclasses_map(BaseTranslate, 'agent')
-            for name in translators.keys():
-                print(f"  - {name}")
-
-        if args.list_languages:
-            print("\n=== IDIOMAS SUPORTADOS ===")
-            for lang_name, lang_code in lang_options.items():
-                print(f"  - {lang_code}: {lang_name}")
-
+        list_options()
         sys.exit(0)
 
-    if args.interactive or not any([args.extractor, args.translator, args.source, args.target, args.input]):
-        success = run_interactive_mode()
+    # Validar argumentos se fornecidos via CLI
+    if any([args.extractor, args.translator, args.source, args.target, args.input]):
+        errors = validate_arguments(args)
+        if errors:
+            cli.print_colored_line("Erros nos argumentos CLI:", 'red')
+            for error in errors:
+                cli.print_colored_line(f"  - {error}", 'red')
+            cli.print_colored_line("\nIniciando modo interativo para corrigir...", 'yellow')
+            time.sleep(2)
+            # Limpar argumentos inválidos para forçar prompt
+            extractors = get_subclasses_map(BaseExtractor, 'name')
+            translators = get_subclasses_map(BaseTranslate, 'agent')
+            if args.extractor not in extractors: args.extractor = None
+            if args.translator not in translators: args.translator = None
+            if args.source not in lang_options.values(): args.source = None
+            if args.target not in lang_options.values(): args.target = None
+            if args.input and not os.path.exists(args.input): args.input = None
+
+    # Iniciar workflow unificado
+    try:
+        success = run_workflow(args)
         sys.exit(0 if success else 1)
-
-    errors = validate_arguments(args)
-    if errors:
-        cli.print_colored_line("Erros encontrados:", 'red')
-        for error in errors:
-            cli.print_colored_line(f"  - {error}", 'red')
-        cli.print_colored_line("\nUse --help para ver a ajuda completa", 'yellow')
+    except KeyboardInterrupt:
+        print("\n\nOperação cancelada pelo usuário.")
+        sys.exit(0)
+    except Exception as e:
+        cli.print_colored_line(f"\nErro fatal: {e}", 'red')
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
-
-    if not all([args.extractor, args.translator, args.source, args.target, args.input]):
-        missing = []
-        if not args.extractor: missing.append("--extractor")
-        if not args.translator: missing.append("--translator")
-        if not args.source: missing.append("--source")
-        if not args.target: missing.append("--target")
-        if not args.input: missing.append("--input")
-
-        cli.print_colored_line(f"Argumentos obrigatórios ausentes: {', '.join(missing)}", 'red')
-        cli.print_colored_line("Use --interactive para modo interativo ou forneça todos os argumentos", 'yellow')
-        sys.exit(1)
-
-    success = run_command_line_mode(args)
-    sys.exit(0 if success else 1)
