@@ -2,11 +2,11 @@ import json
 import os
 import re
 import logging
-from extractor.BaseExtractor import BaseExtractor
-import commun.TextsUtils as TextsUtils
-from extractor.RPGEventCodes import RPGEventCode
-from extractor.RPGTextFilters import RPGTextFilters
-from extractor.RPGEventStrategy import (
+from src.extractor.BaseExtractor import BaseExtractor
+import src.utils.TextsUtils as TextsUtils
+from .RPGEventCodes import RPGEventCode
+from .RPGTextFilters import RPGTextFilters
+from .RPGEventStrategy import (
     ShowTextStrategy, ChoiceStrategy, ScriptStrategy, 
     PluginStrategyMZ, PluginStrategyMV
 )

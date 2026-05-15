@@ -1,6 +1,6 @@
-from translate.BaseTranslate import BaseTranslate
+from src.translate.BaseTranslate import BaseTranslate
 from deep_translator import GoogleTranslator
-import commun.TextsUtils as TextsUtils
+import src.utils.TextsUtils as TextsUtils
 
 
 class GoogleTranslate(BaseTranslate):

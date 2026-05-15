@@ -1,8 +1,8 @@
-from translate.BaseTranslate import BaseTranslate
+from src.translate.BaseTranslate import BaseTranslate
 from dotenv import load_dotenv
 import os
 import ollama
-import commun.TextsUtils as TextsUtils
+import src.utils.TextsUtils as TextsUtils
 load_dotenv()
 
 

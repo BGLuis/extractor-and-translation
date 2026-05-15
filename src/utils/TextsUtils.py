@@ -1,4 +1,4 @@
-from commun.IntWrapper import IntWrapper
+from .IntWrapper import IntWrapper
 
 
 def dictToList(dictionary, extract=None):

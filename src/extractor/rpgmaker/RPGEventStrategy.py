@@ -1,6 +1,6 @@
 import re
-from extractor.RPGEventCodes import RPGEventCode
-from extractor.RPGTextFilters import RPGTextFilters
+from .RPGEventCodes import RPGEventCode
+from .RPGTextFilters import RPGTextFilters
 
 class EventStrategy:
     def extract(self, item, context=None):

@@ -1,7 +1,7 @@
 import csv
 import os
-from extractor.BaseExtractor import BaseExtractor
-import commun.TextsUtils as TextsUtils
+from src.extractor.BaseExtractor import BaseExtractor
+import src.utils.TextsUtils as TextsUtils
 
 
 class CSVExtractor(BaseExtractor):

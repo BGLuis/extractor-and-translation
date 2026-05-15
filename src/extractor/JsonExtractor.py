@@ -1,4 +1,4 @@
-from extractor.BaseExtractor import BaseExtractor
+from src.extractor.BaseExtractor import BaseExtractor
 class JsonExtractor(BaseExtractor):
     name = 'Json'
     files_types = ['json']

@@ -1,10 +1,10 @@
-from translate import *
-from extractor import *
+from src.translate import *
+from src.extractor import *
 
-from extractor.BaseExtractor import BaseExtractor
-from translate.BaseTranslate import BaseTranslate
+from src.extractor.BaseExtractor import BaseExtractor
+from src.translate.BaseTranslate import BaseTranslate
 import shutil
-import cli
+from src import cli
 import os
 import argparse
 import sys

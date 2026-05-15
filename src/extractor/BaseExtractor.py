@@ -8,7 +8,7 @@ import os
 import time
 import logging
 from pathlib import Path
-import commun.TextsUtils as TextsUtils
+import src.utils.TextsUtils as TextsUtils
 
 logging.basicConfig(filename='error.log', level=logging.ERROR,
                     format='%(asctime)s %(levelname)s:%(message)s')

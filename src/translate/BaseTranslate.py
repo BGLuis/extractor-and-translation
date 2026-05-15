@@ -111,7 +111,7 @@ class BaseTranslate(ABC):
         Default implementation: chunks texts based on char_limit.
         Can be overridden by subclasses if different batching logic is needed.
         """
-        import commun.TextsUtils as TextsUtils
+        import src.utils.TextsUtils as TextsUtils
         batches = []
         current_batch = []
         current_length = 0
