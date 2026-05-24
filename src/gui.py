@@ -1,0 +1,486 @@
+import sys
+import os
+import threading
+import time
+import qtawesome as qta
+from qt_material import apply_stylesheet
+
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QLabel, QComboBox, QPushButton, QFileDialog, QLineEdit, 
+    QTextEdit, QCheckBox, QProgressBar, QFrame, QSplitter, 
+    QGroupBox, QSizePolicy, QDialog, QDialogButtonBox
+)
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, QThread, QSize, QEventLoop, QUrl
+from PyQt5.QtGui import QFont, QIcon, QPalette, QColor, QDesktopServices
+
+from src.extractor.BaseExtractor import BaseExtractor
+from src.translate.BaseTranslate import BaseTranslate
+
+# Helper to get subclasses
+def get_subclasses_map(cls, key_attr='name'):
+    return {getattr(sub, key_attr): sub for sub in cls.__subclasses__()}
+
+class VerificationDialog(QDialog):
+    """Dialog for manual verification of files"""
+    def __init__(self, folder_path, parent=None):
+        super().__init__(parent)
+        self.folder_path = folder_path
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("Verificação Manual")
+        self.resize(500, 300)
+        layout = QVBoxLayout(self)
+        
+        icon_label = QLabel()
+        icon_label.setPixmap(qta.icon('fa5s.search', color='#4fc1ff').pixmap(QSize(64, 64)))
+        icon_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(icon_label)
+        
+        text = QLabel(
+            f"A tradução foi pausada para sua verificação.\n\n"
+            f"Por favor, revise os arquivos processados na pasta:\n"
+            f"<b>{self.folder_path}</b>\n\n"
+            f"Quando terminar, clique em 'Continuar' para exportar os arquivos."
+        )
+        text.setWordWrap(True)
+        text.setAlignment(Qt.AlignCenter)
+        layout.addWidget(text)
+        
+        btn_open = QPushButton(" Abrir Pasta de Processamento")
+        btn_open.setIcon(qta.icon('fa5s.external-link-alt'))
+        btn_open.clicked.connect(self.open_folder)
+        layout.addWidget(btn_open)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Continuar")
+        buttons.button(QDialogButtonBox.Cancel).setText("Abortar")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def open_folder(self):
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(self.folder_path)))
+
+class WorkerSignals(QObject):
+    """Signals for the translation worker thread"""
+    finished = pyqtSignal(bool)
+    log = pyqtSignal(str, str) # message, color
+    status_update = pyqtSignal(list) # threads_status
+    request_verification = pyqtSignal(str) # folder_path
+
+class TranslationWorker(QThread):
+    """Thread to handle the translation process without freezing the UI"""
+    verification_response = pyqtSignal(bool)
+
+    def __init__(self, run_process_func, extractor, translate, input_dir, lang_source, backup, verify):
+        super().__init__()
+        self.run_process_func = run_process_func
+        self.extractor = extractor
+        self.translate = translate
+        self.input_dir = input_dir
+        self.lang_source = lang_source
+        self.backup = backup
+        self.verify = verify
+        self.signals = WorkerSignals()
+        self._wait_loop = None
+
+    def run(self):
+        try:
+            def gui_verify_callback(folder):
+                self.signals.request_verification.emit(folder)
+                # Block thread until GUI responds
+                self._wait_loop = QEventLoop()
+                response = [False]
+                
+                def handle_response(res):
+                    response[0] = res
+                    self._wait_loop.quit()
+                
+                self.verification_response.connect(handle_response)
+                self._wait_loop.exec_()
+                return response[0]
+
+            success = self.run_process_func(
+                self.extractor, self.translate, self.input_dir, 
+                self.lang_source, self.backup, self.verify,
+                gui_signals=self.signals,
+                gui_verify_callback=gui_verify_callback
+            )
+            self.signals.finished.emit(success)
+        except Exception as e:
+            self.signals.log.emit(f"Error: {str(e)}", "red")
+            self.signals.finished.emit(False)
+
+class TranslationGUI(QMainWindow):
+    def __init__(self, args=None, lang_options=None, run_process_func=None):
+        super().__init__()
+        self.args = args
+        self.lang_options = lang_options or {}
+        self.run_process_func = run_process_func
+        self.worker = None
+        
+        self.init_ui()
+        self.load_options()
+        self.apply_args()
+
+    def init_ui(self):
+        self.setWindowTitle("Translator")
+        self.setWindowIcon(qta.icon('fa5s.language'))
+        self.resize(1100, 800)
+        
+        # Main widget and layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
+        
+        # Header
+        header_layout = QHBoxLayout()
+        title_icon = QLabel()
+        title_icon.setPixmap(qta.icon('fa5s.robot', color='white').pixmap(QSize(48, 48)))
+        header_layout.addWidget(title_icon)
+        
+        title_text = QLabel("Translator")
+        title_text.setStyleSheet("font-size: 24px; font-weight: bold; color: white;")
+        header_layout.addWidget(title_text)
+        header_layout.addStretch()
+        
+        main_layout.addLayout(header_layout)
+        
+        # Splitter for settings and logs
+        splitter = QSplitter(Qt.Vertical)
+        
+        # --- Settings Area ---
+        settings_widget = QWidget()
+        settings_layout = QVBoxLayout(settings_widget)
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Config Group
+        config_group = QGroupBox("Configurações de Tradução")
+        config_layout = QVBoxLayout(config_group)
+        
+        # Extractor & Translator row
+        row1 = QHBoxLayout()
+        
+        vbox_ext = QVBoxLayout()
+        vbox_ext.addWidget(QLabel("Extrator de Texto:"))
+        self.extractor_combo = QComboBox()
+        vbox_ext.addWidget(self.extractor_combo)
+        row1.addLayout(vbox_ext)
+        
+        vbox_trans = QVBoxLayout()
+        vbox_trans.addWidget(QLabel("Agente de Tradução:"))
+        self.translator_combo = QComboBox()
+        self.translator_combo.currentIndexChanged.connect(self.on_translator_changed)
+        vbox_trans.addWidget(self.translator_combo)
+        row1.addLayout(vbox_trans)
+        
+        config_layout.addLayout(row1)
+        
+        # Languages row
+        row2 = QHBoxLayout()
+        
+        vbox_src = QVBoxLayout()
+        vbox_src.addWidget(QLabel("Idioma de Origem:"))
+        self.source_lang_combo = QComboBox()
+        vbox_src.addWidget(self.source_lang_combo)
+        row2.addLayout(vbox_src)
+        
+        vbox_dst = QVBoxLayout()
+        vbox_dst.addWidget(QLabel("Idioma de Destino:"))
+        self.target_lang_combo = QComboBox()
+        vbox_dst.addWidget(self.target_lang_combo)
+        row2.addLayout(vbox_dst)
+        
+        config_layout.addLayout(row2)
+        
+        # Directory row
+        vbox_dir = QVBoxLayout()
+        vbox_dir.addWidget(QLabel("Pasta do Jogo:"))
+        dir_row = QHBoxLayout()
+        self.dir_input = QLineEdit()
+        self.dir_input.setPlaceholderText("Selecione a pasta contendo os arquivos do jogo...")
+        dir_row.addWidget(self.dir_input)
+        
+        self.btn_browse = QPushButton(" Procurar")
+        self.btn_browse.setIcon(qta.icon('fa5s.folder-open'))
+        self.btn_browse.clicked.connect(self.browse_directory)
+        dir_row.addWidget(self.btn_browse)
+        vbox_dir.addLayout(dir_row)
+        config_layout.addLayout(vbox_dir)
+        
+        # Synopsis (Dynamic Visibility)
+        self.synopsis_container = QWidget()
+        syn_layout = QVBoxLayout(self.synopsis_container)
+        syn_layout.setContentsMargins(0, 0, 0, 0)
+        syn_layout.addWidget(QLabel("Sinopse / Contexto (Melhora Tradução IA):"))
+        self.synopsis_input = QLineEdit()
+        self.synopsis_input.setPlaceholderText("Ex: Um jogo de RPG sobre um herói que viaja no tempo...")
+        syn_layout.addWidget(self.synopsis_input)
+        config_layout.addWidget(self.synopsis_container)
+        self.synopsis_container.setVisible(False) # Default hidden
+        
+        # Options row
+        row4 = QHBoxLayout()
+        self.chk_backup = QCheckBox("Criar Backup Automático")
+        self.chk_backup.setChecked(True)
+        self.chk_backup.setMinimumHeight(40) # Ensure it's clickable
+        row4.addWidget(self.chk_backup)
+        
+        self.chk_verify = QCheckBox("Pausar para Verificação")
+        self.chk_verify.setChecked(True)
+        self.chk_verify.setMinimumHeight(40) # Ensure it's clickable
+        row4.addWidget(self.chk_verify)
+        
+        config_layout.addLayout(row4)
+        
+        settings_layout.addWidget(config_group)
+        
+        # Start Button
+        self.btn_start = QPushButton(" INICIAR TRADUÇÃO")
+        self.btn_start.setIcon(qta.icon('fa5s.play', color='white'))
+        self.btn_start.setIconSize(QSize(20, 20))
+        self.btn_start.setFixedHeight(55)
+        self.btn_start.setCursor(Qt.PointingHandCursor)
+        self.btn_start.clicked.connect(self.start_translation)
+        settings_layout.addWidget(self.btn_start)
+        
+        # --- Logs Area ---
+        log_widget = QWidget()
+        log_layout = QVBoxLayout(log_widget)
+        log_layout.setContentsMargins(0, 10, 0, 0)
+        
+        log_header = QHBoxLayout()
+        log_header.addWidget(QLabel("Saída de Log:"))
+        log_header.addStretch()
+        self.btn_clear_log = QPushButton()
+        self.btn_clear_log.setIcon(qta.icon('fa5s.trash-alt'))
+        self.btn_clear_log.setToolTip("Limpar Logs")
+        self.btn_clear_log.setFlat(True)
+        self.btn_clear_log.clicked.connect(lambda: self.log_output.clear())
+        log_header.addWidget(self.btn_clear_log)
+        log_layout.addLayout(log_header)
+        
+        self.log_output = QTextEdit()
+        self.log_output.setReadOnly(True)
+        self.log_output.setFont(QFont('Consolas', 10))
+        log_layout.addWidget(self.log_output)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setAlignment(Qt.AlignCenter)
+        log_layout.addWidget(self.progress_bar)
+        
+        splitter.addWidget(settings_widget)
+        splitter.addWidget(log_widget)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 1)
+        
+        main_layout.addWidget(splitter)
+        
+        # Status Bar
+        self.statusBar().showMessage("Pronto para traduzir")
+
+    def load_options(self):
+        # Load Extractors
+        extractors = get_subclasses_map(BaseExtractor, 'name')
+        for name in sorted(extractors.keys()):
+            self.extractor_combo.addItem(name, extractors[name])
+            
+        # Load Translators
+        translators = get_subclasses_map(BaseTranslate, 'agent')
+        for name in sorted(translators.keys()):
+            self.translator_combo.addItem(name, translators[name])
+            
+        # Load Languages
+        for lang_name, lang_code in self.lang_options.items():
+            self.source_lang_combo.addItem(lang_name, lang_code)
+            self.target_lang_combo.addItem(lang_name, lang_code)
+            
+        # Set defaults
+        idx = self.target_lang_combo.findData('pt')
+        if idx >= 0: self.target_lang_combo.setCurrentIndex(idx)
+        
+        self.on_translator_changed() # Trigger initial check
+
+    def on_translator_changed(self):
+        translator_class = self.translator_combo.currentData()
+        if translator_class and hasattr(translator_class, 'requires_synopsis'):
+            self.synopsis_container.setVisible(translator_class.requires_synopsis())
+        else:
+            self.synopsis_container.setVisible(False)
+
+    def apply_args(self):
+        if not self.args: return
+        if hasattr(self.args, 'extractor') and self.args.extractor:
+            idx = self.extractor_combo.findText(self.args.extractor)
+            if idx >= 0: self.extractor_combo.setCurrentIndex(idx)
+        if hasattr(self.args, 'translator') and self.args.translator:
+            idx = self.translator_combo.findText(self.args.translator)
+            if idx >= 0: self.translator_combo.setCurrentIndex(idx)
+        if hasattr(self.args, 'source') and self.args.source:
+            idx = self.source_lang_combo.findData(self.args.source)
+            if idx >= 0: self.source_lang_combo.setCurrentIndex(idx)
+        if hasattr(self.args, 'target') and self.args.target:
+            idx = self.target_lang_combo.findData(self.args.target)
+            if idx >= 0: self.target_lang_combo.setCurrentIndex(idx)
+        if hasattr(self.args, 'input') and self.args.input:
+            abs_path = os.path.abspath(self.args.input)
+            self.dir_input.setText(abs_path)
+            self.auto_detect_game_type(abs_path)
+        if hasattr(self.args, 'synopsis') and self.args.synopsis:
+            self.synopsis_input.setText(self.args.synopsis)
+        if hasattr(self.args, 'no_backup') and self.args.no_backup:
+            self.chk_backup.setChecked(False)
+        if hasattr(self.args, 'no_verify') and self.args.no_verify:
+            self.chk_verify.setChecked(False)
+
+    def browse_directory(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "Selecionar Pasta do Jogo")
+        if dir_path:
+            self.dir_input.setText(dir_path)
+            self.auto_detect_game_type(dir_path)
+
+    def auto_detect_game_type(self, dir_path):
+        """Tenta adivinhar a pasta correta e o extrator com base na estrutura"""
+        if not dir_path or not os.path.isdir(dir_path):
+            return
+
+        detected_path = dir_path
+        detected_extractor = None
+        
+        # Heurística RPG Maker MV/MZ
+        www_data = os.path.join(dir_path, 'www', 'data')
+        data = os.path.join(dir_path, 'data')
+        
+        if os.path.isdir(www_data):
+            detected_path = www_data
+            detected_extractor = 'RPG Maker'
+        elif os.path.isdir(data):
+            # Se for pasta root com subpasta data, usa a subpasta data
+            detected_path = data
+            detected_extractor = 'RPG Maker'
+        else:
+            # Check for common RPG Maker files in the current dir
+            try:
+                files = os.listdir(dir_path)
+                json_files = [f for f in files if f.endswith('.json')]
+                if any(f.startswith('Map') or f == 'System.json' for f in json_files):
+                    detected_extractor = 'RPG Maker'
+                elif json_files:
+                    detected_extractor = 'Json'
+            except Exception:
+                pass
+                
+        # Atualizar a GUI se algo foi detectado
+        if detected_path != dir_path:
+            self.log(f"Pasta ajustada automaticamente para dados do jogo: {os.path.basename(detected_path)}", "green")
+            self.dir_input.setText(detected_path)
+            
+        if detected_extractor:
+            idx = self.extractor_combo.findText(detected_extractor)
+            if idx >= 0:
+                self.extractor_combo.setCurrentIndex(idx)
+                self.log(f"Extrator sugerido automaticamente: {detected_extractor}", "green")
+
+    def log(self, message, color="white"):
+        timestamp = time.strftime("%H:%M:%S")
+        color_hex = {
+            "white": "#d4d4d4",
+            "green": "#4ec9b0",
+            "red": "#f44747",
+            "yellow": "#dcdcaa",
+            "cyan": "#4fc1ff"
+        }.get(color, "#d4d4d4")
+        
+        self.log_output.append(f'<span style="color: #808080">[{timestamp}]</span> <span style="color: {color_hex}">{message}</span>')
+        self.log_output.moveCursor(self.log_output.textCursor().End)
+
+    def handle_verification(self, folder):
+        dialog = VerificationDialog(folder, self)
+        result = dialog.exec_()
+        self.worker.verification_response.emit(result == QDialog.Accepted)
+
+    def start_translation(self):
+        input_dir = self.dir_input.text().strip()
+        if not input_dir or not os.path.exists(input_dir):
+            self.log("Erro: Pasta de entrada inválida.", "red")
+            return
+
+        extractor_class = self.extractor_combo.currentData()
+        translator_class = self.translator_combo.currentData()
+        lang_source = self.source_lang_combo.currentData()
+        lang_target = self.target_lang_combo.currentData()
+        
+        if lang_source == lang_target:
+            self.log("Erro: Idioma de origem e destino não podem ser iguais.", "red")
+            return
+
+        self.btn_start.setEnabled(False)
+        self.btn_start.setText(" PROCESSANDO...")
+        self.btn_start.setIcon(qta.icon('fa5s.spinner', color='white', animation=qta.Spin(self.btn_start)))
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.log_output.clear()
+        
+        self.log(f"Iniciando tradução com {extractor_class.name} e {translator_class.agent}...", "cyan")
+        self.log(f"De {lang_source} para {lang_target}", "cyan")
+
+        translator = translator_class()
+        translator.change_language(lang_source, lang_target)
+        if self.synopsis_input.text():
+            translator.apply_configuration({'synopsis': self.synopsis_input.text()})
+            
+        extractor = extractor_class(translator)
+        extractor.init_folder()
+
+        self.worker = TranslationWorker(
+            self.run_process_func, extractor, translator, input_dir, lang_source,
+            self.chk_backup.isChecked(), self.chk_verify.isChecked()
+        )
+        self.worker.signals.log.connect(self.log)
+        self.worker.signals.finished.connect(self.on_finished)
+        self.worker.signals.request_verification.connect(self.handle_verification)
+        
+        self.status_timer = self.startTimer(1000)
+        self.worker.extractor_to_poll = extractor
+        self.worker.start()
+
+    def timerEvent(self, event):
+        if hasattr(self, 'worker') and self.worker and self.worker.isRunning():
+            status = self.worker.extractor_to_poll.threads_status
+            self.update_progress(status)
+
+    def update_progress(self, status_list):
+        if not status_list: return
+        total_files = len(status_list)
+        done_files = sum(1 for s in status_list if s.get('status') in ['success', 'erro', 'ignore'])
+        if total_files > 0:
+            percent = int((done_files / total_files) * 100)
+            self.progress_bar.setValue(percent)
+            self.statusBar().showMessage(f"Processando: {done_files}/{total_files} arquivos")
+
+    def on_finished(self, success):
+        self.killTimer(self.status_timer)
+        self.btn_start.setEnabled(True)
+        self.btn_start.setText(" INICIAR TRADUÇÃO")
+        self.btn_start.setIcon(qta.icon('fa5s.play', color='white'))
+        self.progress_bar.setVisible(False)
+        
+        if success:
+            self.log("Tradução finalizada com sucesso!", "green")
+            self.statusBar().showMessage("Concluído!")
+        else:
+            self.log("Tradução interrompida ou com erros.", "red")
+            self.statusBar().showMessage("Erro no processamento")
+
+def run_gui(args, lang_options, run_process_func):
+    app = QApplication(sys.argv)
+    apply_stylesheet(app, theme='dark_blue.xml')
+    window = TranslationGUI(args, lang_options, run_process_func)
+    window.show()
+    sys.exit(app.exec_())
