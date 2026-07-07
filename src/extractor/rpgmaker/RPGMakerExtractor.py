@@ -21,7 +21,6 @@ class RPGMakerExtractor(BaseExtractor):
             RPGEventCode.SHOW_TEXT_MORE: ShowTextStrategy(),
             RPGEventCode.SCROLL_TEXT: ShowTextStrategy(),
             RPGEventCode.COMMENT: ShowTextStrategy(),
-            RPGEventCode.LABEL: ShowTextStrategy(),
             RPGEventCode.SHOW_CHOICES: ChoiceStrategy(),
             RPGEventCode.SCRIPT: ScriptStrategy(),
             RPGEventCode.SCRIPT_MORE: ScriptStrategy(),
@@ -248,7 +247,7 @@ class RPGMakerExtractor(BaseExtractor):
 
         _compiled_patterns = [
             (re.compile(r'\\\s+'), r'\\'), (re.compile(r'(?i)\bif\s*\('), 'if('),
-            (re.compile(r'"\s+"'), '""'), (re.compile(r'\\n\s+'), '\\n'),
+            (re.compile(r'"\s+"'), '""'), (re.compile(r'\\n\s+'), r'\\n'),
             (re.compile(r'\s*_\s*'), '_'), (re.compile(r'<\s*>'), '<>'),
             (re.compile(r'\$\s+'), '$'), (re.compile(r'>\s*='), '>='),
             (re.compile(r'<\s*='), '<='), (re.compile(r'!\s*='), '!='),

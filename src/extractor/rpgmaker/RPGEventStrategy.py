@@ -154,24 +154,32 @@ class ScriptStrategy(EventStrategy):
     def insert(self, item, text, context=None):
         if not text: return
         script_content = item['parameters'][0]
-        text_to_insert = " ".join(text) if isinstance(text, list) else str(text)
+        
+        if isinstance(text, list):
+            text_iter = iter(text)
+        else:
+            text_iter = iter([str(text)] * 100) # Infinite-like fallback
 
-        # Para inserção, o RPGMakerExtractor original usava uma lógica reversa com regex
-        # Vamos manter uma lógica similar mas mais segura
         found = False
         for pattern in self.SAFE_FUNCTIONS:
             if pattern.search(script_content):
-                # Substitui apenas o conteúdo do grupo 2 (o texto)
                 def replacer(m):
-                    return m.group(0).replace(m.group(2), text_to_insert)
+                    try:
+                        next_text = str(next(text_iter))
+                    except StopIteration:
+                        next_text = m.group(2) # Fallback to original if ran out
+                    return m.group(0).replace(m.group(2), next_text)
+                
                 item['parameters'][0] = pattern.sub(replacer, script_content)
                 found = True
                 break
         
         if not found and self._subject_pattern.search(script_content):
             parts = script_content.split('_subject=')
-            parts[1] = f'{text_to_insert}"'
-            item['parameters'][0] = '_subject='.join(parts)
+            if len(parts) > 1:
+                next_text = str(next(text_iter)) if isinstance(text, list) else str(text)
+                parts[1] = f'{next_text}"'
+                item['parameters'][0] = '_subject='.join(parts)
 
 class PluginStrategyMZ(EventStrategy):
     TECHNICAL_KEYS = {
@@ -181,7 +189,10 @@ class PluginStrategyMZ(EventStrategy):
         'WordWrap', 'FontFace', 'FontSize', 'TextSpeed', 'AutoColor',
         'MessageRows', 'MessageWidth', 'ChoiceLineHeight', 'ChoiceRows',
         'switchType', 'variableId', 'value', 'operation', 'operand',
-        'image', 'picture', 'icon', 'se', 'bgm', 'bgs', 'me'
+        'image', 'picture', 'icon', 'se', 'bgm', 'bgs', 'me',
+        'windowPosition', 'direction', 'id', 'animationType', 'customPattern',
+        'cellNumber', 'frameNumber', 'fade', 'pictureNumber', 'align',
+        'position', 'type', 'mode', 'easing', 'color', 'opacity', 'blendMode'
     }
     
     TEXT_KEYS = {'text', 'message', 'description', 'title', 'name', 'label', 'tooltip', 'help', 'content', 'body'}
@@ -195,8 +206,9 @@ class PluginStrategyMZ(EventStrategy):
         for key, val in params.items():
             if key in self.TECHNICAL_KEYS: continue
             
+            # Avoid extracting purely technical string values like "upper", "number", "false", etc.
             if isinstance(val, str) and not RPGTextFilters.is_technical_or_code(val):
-                if key in self.TEXT_KEYS or len(val) > 3 or ' ' in val or any(c in val for c in '.,;:!?'):
+                if key in self.TEXT_KEYS or ' ' in val or any(c in val for c in '.,;:!?　、。！？'):
                     extracted[key] = val
         
         if not extracted: return None

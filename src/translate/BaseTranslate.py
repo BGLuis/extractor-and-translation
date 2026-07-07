@@ -135,12 +135,14 @@ class BaseTranslate(ABC):
         return batches
 
     def translate_batch_parallel(self, batches, progress_callback=None):
+        import time
         if not batches:
             return []
 
         max_workers = min(self.MAX_REQUESTS_SIMULTANEOUSLY, len(batches))
 
         translated_batches = [None] * len(batches)
+        start_time = time.time()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_index = {
@@ -153,19 +155,19 @@ class BaseTranslate(ABC):
                 batch_idx = future_to_index[future]
                 try:
                     translated_batches[batch_idx] = future.result()
-                    completed += 1
-                    if progress_callback:
-                        progress_callback(completed, len(batches))
                 except Exception as e:
-                    translated_batches[batch_idx] = []
+                    translated_batches[batch_idx] = None
                     print(f"Error translating batch {batch_idx}: {e}")
+                
+                completed += 1
+                if progress_callback:
+                    elapsed = time.time() - start_time
+                    avg_time = elapsed / completed
+                    remaining = len(batches) - completed
+                    eta = avg_time * remaining
+                    progress_callback(completed, len(batches), eta)
 
-        all_translations = []
-        for batch in translated_batches:
-            if batch:
-                all_translations.extend(batch)
-
-        return all_translations
+        return translated_batches
 
     def translate_batch(self, texts, progress_callback=None):
         if texts is None:
@@ -191,18 +193,35 @@ class BaseTranslate(ABC):
         # 2. Process non-cached texts
         if non_cached_texts:
             batches = self._create_batches(non_cached_texts)
-            translated_results = self.translate_batch_parallel(batches, progress_callback)
+            translated_batches_results = self.translate_batch_parallel(batches, progress_callback)
 
-            # Proteção de integridade: se o total divergir, faz fallback 1:1
-            # para evitar desalinhamento entre textos e traduções no cache.
-            if len(translated_results) != len(non_cached_texts):
-                translated_results = []
-                for text in non_cached_texts:
-                    try:
-                        single = self._translate_single_batch([text])
-                        translated_results.append(single[0] if single else text)
-                    except Exception:
-                        translated_results.append(text)
+            # Process batches and apply fallback ONLY to failed batches
+            translated_results = []
+            for batch_idx, batch_result in enumerate(translated_batches_results):
+                original_batch = batches[batch_idx]
+                if batch_result is None or len(batch_result) != len(original_batch):
+                    safe_results = []
+                    for text in original_batch:
+                        if len(text) > self.char_limit:
+                            # Chunk oversized strings to avoid persistent >5000 character errors
+                            pieces = [text[i:i+self.char_limit] for i in range(0, len(text), self.char_limit)]
+                            translated_pieces = []
+                            for p in pieces:
+                                try:
+                                    t = self._translate_single_batch([p])
+                                    translated_pieces.append(t[0] if t else p)
+                                except Exception:
+                                    translated_pieces.append(p)
+                            safe_results.append("".join(translated_pieces))
+                        else:
+                            try:
+                                single = self._translate_single_batch([text])
+                                safe_results.append(single[0] if single else text)
+                            except Exception:
+                                safe_results.append(text)
+                    translated_results.extend(safe_results)
+                else:
+                    translated_results.extend(batch_result)
 
             # 3. Merge results back
             # We must be careful if translated_results count matches non_cached_texts count

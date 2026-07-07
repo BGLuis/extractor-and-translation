@@ -241,6 +241,10 @@ class BaseExtractor(ABC):
         for attempt in range(retries):
             try:
                 file_name, data = self.extract_files(file_path_str)
+                if data is None:
+                    self.add_threads_status({'file': file_path_str, 'status': 'erro', 'msg': "Formato não suportado ou arquivo vazio"})
+                    return
+                
                 raw_text = self.extract_text(file_name, data)
 
                 if not raw_text:

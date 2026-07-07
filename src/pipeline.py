@@ -43,13 +43,18 @@ class MaskingStep(PipelineStep):
 
 class TranslationStep(PipelineStep):
     def process(self, context: TranslationContext) -> TranslationContext:
-        def progress_callback(current, total):
+        def progress_callback(current, total, eta_seconds=None):
+            msg = f"Translating batch {current}/{total}"
+            if eta_seconds is not None:
+                mins, secs = divmod(int(eta_seconds), 60)
+                msg += f" - ETA: {mins}m {secs}s"
+            
             context.extractor.add_threads_status({
                 'file': context.file_path_str,
                 'status': 'process',
                 'current': current,
                 'total': total,
-                'msg': f"Translating batch {current}/{total}"
+                'msg': msg
             })
 
         context.extractor.add_threads_status({
