@@ -1,24 +1,17 @@
 import re
-import threading
-from abc import ABC, abstractmethod
 import copy
 import glob
 import json
 import os
 import time
 import logging
-from pathlib import Path
-import src.utils.TextsUtils as TextsUtils
-
-logging.basicConfig(filename='error.log', level=logging.ERROR,
-                    format='%(asctime)s %(levelname)s:%(message)s')
+from abc import ABC, abstractmethod
 
 class BaseExtractor(ABC):
     name = 'BaseExtractor'
     folderProcess = 'process'
     folderInput = 'input'
     folderOutput = 'output'
-    threads = []
     files_types = []
 
     def __init__(self, translate):
@@ -27,6 +20,21 @@ class BaseExtractor(ABC):
         self.create_directory_if_not_exists(self.__class__.folderOutput)
         self.translate = translate
         self.threads_status = []
+        self.futures = []
+        self.executor = None
+        self.observers = []
+
+    def add_observer(self, callback):
+        """Padrão Observer: Adiciona um ouvinte para receber eventos do Extrator"""
+        self.observers.append(callback)
+
+    def notify_observers(self, event_name, data):
+        """Notifica todos os ouvintes sobre uma mudança de estado"""
+        for obs in self.observers:
+            try:
+                obs(event_name, data)
+            except Exception as e:
+                logging.error(f"Erro no observer: {e}")
 
     @staticmethod
     def create_directory_if_not_exists(directory):
@@ -36,7 +44,10 @@ class BaseExtractor(ABC):
     @staticmethod
     def clean_folder(folder):
         for file in glob.glob(folder + '/*'):
-            os.remove(file)
+            if os.path.isdir(file):
+                shutil.rmtree(file)
+            else:
+                os.remove(file)
 
     @classmethod
     def extract_files(cls, file_path):
@@ -152,10 +163,21 @@ class BaseExtractor(ABC):
         return merged_dict
 
     def add_threads_status(self, status):
+        status_state = status.get('status', 'info')
+        file_path = status.get('file', 'Unknown File')
+        msg = status.get('msg', '')
+        
+        # Loga no arquivo de forma amigável
+        if status_state != 'process': # Ignora logs de "process" repetitivos para não poluir o arquivo
+            logging.info(f"[{status_state.upper()}] {file_path} - {msg}")
+
         for i, s in enumerate(self.threads_status):
             if s['file'] == status['file']:
                 self.threads_status.remove(s)
         self.threads_status.append(status)
+        
+        # Notifica os observadores (ex: GUI/CLI) que o status mudou
+        self.notify_observers('status_update', self.threads_status)
 
     def _get_patterns(self, file_name, data):
         if hasattr(self, 'get_mask_patterns') and callable(getattr(self, 'get_mask_patterns')):
@@ -183,44 +205,29 @@ class BaseExtractor(ABC):
         return patterns
 
     def _pipeline_translate(self, file_name, data, text, translate_instance, file_path_str):
-        # 1. Get Patterns
-        patterns = self._get_patterns(file_name, data)
-
-        # 2. Masking
-        try:
-            masked_temp, _mask_map = TextsUtils.mask_tokens_in_structure(text, patterns, prefix="__XTOK_")
-        except Exception:
-            masked_temp, _mask_map = text, {}
-
-        # 3. Translation
-        def progress_callback(current, total):
-            self.add_threads_status({
-                'file': file_path_str,
-                'status': 'process',
-                'current': current,
-                'total': total,
-                'msg': f"Translating batch {current}/{total}"
-            })
-
-        self.add_threads_status({'file': file_path_str, 'status': 'process', 'msg': "Processing file"})
-        translated = translate_instance.translator(masked_temp, progress_callback)
-
-        # 4. Unmasking
-        try:
-            if _mask_map:
-                unmasked = TextsUtils.unmask_tokens_in_structure(translated, _mask_map)
-            else:
-                unmasked = translated
-        except Exception:
-            unmasked = translated
-
-        # 5. Fixing
-        try:
-            self.fix_text_translate(unmasked, text)
-        except Exception as e:
-            logging.error(f"Error applying fix_text_translate in process_file: {e}")
-
-        return unmasked
+        from src.pipeline import (
+            TranslationContext, TranslationPipeline,
+            GetPatternsStep, MaskingStep, TranslationStep,
+            UnmaskingStep, FixingStep
+        )
+        
+        context = TranslationContext(
+            file_name=file_name,
+            data=data,
+            text=text,
+            translate_instance=translate_instance,
+            file_path_str=file_path_str,
+            extractor=self
+        )
+        
+        pipeline = TranslationPipeline()
+        pipeline.add_step(GetPatternsStep()) \
+                .add_step(MaskingStep()) \
+                .add_step(TranslationStep()) \
+                .add_step(UnmaskingStep()) \
+                .add_step(FixingStep())
+                
+        return pipeline.execute(context)
 
     def _handle_no_text(self, file_path_str, file_name, data):
         self.add_threads_status(
@@ -264,14 +271,29 @@ class BaseExtractor(ABC):
                         {'file': file_path_str, 'status': 'erro', 'msg': f"Failed to process after {retries}"})
 
     def process_files(self):
-        for file in glob.glob(self.__class__.folderInput + '/*'):
-            thread = threading.Thread(target=self.process_file, args=(file,))
-            self.threads.append(thread)
-            thread.start()
+        import concurrent.futures
+        # Limitar a concorrência para evitar travamentos (ex: 5 a 10)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+        self.futures = []
+        
+        files = glob.glob(self.__class__.folderInput + '/*')
+        
+        # Pré-popula o status para que a UI reconheça arquivos na fila
+        for file in files:
+            self.add_threads_status({'file': file, 'status': 'waiting', 'msg': 'Na fila de processamento...'})
+            
+        # Inicia a execução controlada
+        for file in files:
+            future = self.executor.submit(self.process_file, file)
+            self.futures.append(future)
 
     def import_files(self):
-        for thread in self.threads:
-            thread.join()
+        # Aguarda todas as tarefas do pool terminarem
+        if hasattr(self, 'executor') and self.executor:
+            import concurrent.futures
+            concurrent.futures.wait(self.futures)
+            self.executor.shutdown(wait=True)
+            self.futures = []
 
         for file in glob.glob(self.__class__.folderProcess + '/*'):
             file_name = os.path.basename(file)

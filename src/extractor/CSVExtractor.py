@@ -1,11 +1,11 @@
 import csv
 import os
 from src.extractor.BaseExtractor import BaseExtractor
-import src.utils.TextsUtils as TextsUtils
 
+from src.factory import register_extractor
 
+@register_extractor("CSV")
 class CSVExtractor(BaseExtractor):
-    name = 'CSV'
     files_types = ['csv']
 
     def __init__(self, translate):

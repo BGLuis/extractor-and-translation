@@ -1,10 +1,10 @@
 from src.translate.BaseTranslate import BaseTranslate
 from deep_translator import GoogleTranslator
 import src.utils.TextsUtils as TextsUtils
+from src.factory import register_translator
 
-
+@register_translator("googleTraslator")
 class GoogleTranslate(BaseTranslate):
-    agent = 'googleTraslator'
     # Evita inconsistências em lotes com o cliente HTTP compartilhado.
     MAX_REQUESTS_SIMULTANEOUSLY = 7
 

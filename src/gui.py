@@ -1,6 +1,5 @@
 import sys
 import os
-import threading
 import time
 import qtawesome as qta
 from qt_material import apply_stylesheet
@@ -8,18 +7,13 @@ from qt_material import apply_stylesheet
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QComboBox, QPushButton, QFileDialog, QLineEdit, 
-    QTextEdit, QCheckBox, QProgressBar, QFrame, QSplitter, 
-    QGroupBox, QSizePolicy, QDialog, QDialogButtonBox
+    QTextEdit, QCheckBox, QProgressBar, QSplitter, 
+    QGroupBox, QDialog, QDialogButtonBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QObject, QThread, QSize, QEventLoop, QUrl
-from PyQt5.QtGui import QFont, QIcon, QPalette, QColor, QDesktopServices
+from PyQt5.QtGui import QFont, QDesktopServices
 
-from src.extractor.BaseExtractor import BaseExtractor
-from src.translate.BaseTranslate import BaseTranslate
-
-# Helper to get subclasses
-def get_subclasses_map(cls, key_attr='name'):
-    return {getattr(sub, key_attr): sub for sub in cls.__subclasses__()}
+from src.factory import ExtractorFactory, TranslatorFactory
 
 class VerificationDialog(QDialog):
     """Dialog for manual verification of files"""
@@ -287,12 +281,12 @@ class TranslationGUI(QMainWindow):
 
     def load_options(self):
         # Load Extractors
-        extractors = get_subclasses_map(BaseExtractor, 'name')
+        extractors = ExtractorFactory.get_available()
         for name in sorted(extractors.keys()):
             self.extractor_combo.addItem(name, extractors[name])
             
         # Load Translators
-        translators = get_subclasses_map(BaseTranslate, 'agent')
+        translators = TranslatorFactory.get_available()
         for name in sorted(translators.keys()):
             self.translator_combo.addItem(name, translators[name])
             
@@ -430,12 +424,12 @@ class TranslationGUI(QMainWindow):
         self.log(f"Iniciando tradução com {extractor_class.name} e {translator_class.agent}...", "cyan")
         self.log(f"De {lang_source} para {lang_target}", "cyan")
 
-        translator = translator_class()
+        translator = TranslatorFactory.create(translator_class.agent)
         translator.change_language(lang_source, lang_target)
         if self.synopsis_input.text():
             translator.apply_configuration({'synopsis': self.synopsis_input.text()})
             
-        extractor = extractor_class(translator)
+        extractor = ExtractorFactory.create(extractor_class.name, translator)
         extractor.init_folder()
 
         self.worker = TranslationWorker(

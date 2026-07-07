@@ -1,13 +1,20 @@
-from src.translate import *
-from src.extractor import *
-
-from src.extractor.BaseExtractor import BaseExtractor
-from src.translate.BaseTranslate import BaseTranslate
+from src.services.FileNameTranslator import FileNameTranslator
 import shutil
 from src import cli
 import os
 import argparse
 import sys
+import time
+import logging
+from logging.handlers import RotatingFileHandler
+
+def setup_logging():
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler = RotatingFileHandler('processamento.log', maxBytes=5*1024*1024, backupCount=2, encoding='utf-8')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
 lang_options = {
     'Português': 'pt',
@@ -19,8 +26,7 @@ lang_options = {
     'Automático (Detectar)': 'auto'
 }
 
-def get_subclasses_map(cls, key_attr='name'):
-    return {getattr(sub, key_attr): sub for sub in cls.__subclasses__()}
+from src.factory import ExtractorFactory, TranslatorFactory
 
 def remove_lang_options(lang_source):
     """Remove o idioma de origem e a opção 'auto' da lista de destino"""
@@ -75,6 +81,7 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemplos de uso:
+  python main.py --gui
   python main.py --interactive
   python main.py -e RPGMaker -t Google -s pt -d en -i /path/to/input
   python main.py --extractor JsonExtractor --translator Ollama --source ja --target pt --input ./data --no-backup
@@ -83,6 +90,8 @@ Exemplos de uso:
         """
     )
 
+    parser.add_argument('-g', '--gui', action='store_true',
+                       help='Iniciar interface gráfica (PyQt5)')
     parser.add_argument('-e', '--extractor',
                        help='Tipo de extrator (use --list-extractors para ver opções)')
     parser.add_argument('-t', '--translator',
@@ -103,6 +112,11 @@ Exemplos de uso:
     parser.add_argument('--interactive', action='store_true',
                        help='Modo interativo (padrão se nenhum argumento for fornecido)')
 
+    parser.add_argument('--mode', choices=['content', 'filenames'], default='content',
+                       help='Modo de operação: traduzir conteúdo de arquivos (content) ou nomes de arquivos (filenames)')
+    parser.add_argument('--keep-original', action='store_true',
+                       help='No modo filenames, manter o arquivo original e criar uma cópia traduzida')
+
     parser.add_argument('--list-extractors', action='store_true',
                        help='Listar extratores disponíveis')
     parser.add_argument('--list-translators', action='store_true',
@@ -116,12 +130,12 @@ Exemplos de uso:
 def list_options():
     """Print available options and exit"""
     print("\n=== EXTRATORES DISPONÍVEIS ===")
-    extractors = get_subclasses_map(BaseExtractor, 'name')
+    extractors = ExtractorFactory.get_available()
     for name in extractors.keys():
         print(f"  - {name}")
 
     print("\n=== TRADUTORES DISPONÍVEIS ===")
-    translators = get_subclasses_map(BaseTranslate, 'agent')
+    translators = TranslatorFactory.get_available()
     for name in translators.keys():
         print(f"  - {name}")
 
@@ -134,12 +148,12 @@ def validate_arguments(args):
     errors = []
 
     if args.extractor:
-        extractors = get_subclasses_map(BaseExtractor, 'name')
+        extractors = ExtractorFactory.get_available()
         if args.extractor not in extractors:
             errors.append(f"Extrator '{args.extractor}' não encontrado. Opções: {list(extractors.keys())}")
 
     if args.translator:
-        translators = get_subclasses_map(BaseTranslate, 'agent')
+        translators = TranslatorFactory.get_available()
         if args.translator not in translators:
             errors.append(f"Tradutor '{args.translator}' não encontrado. Opções: {list(translators.keys())}")
 
@@ -158,13 +172,101 @@ def validate_arguments(args):
     return errors
 
 
+def run_filename_translation_workflow(args, translators):
+    """Fluxo de trabalho para tradução de nomes de arquivos"""
+    # 1. Selecionar Tradutor
+    if args.translator and args.translator in translators:
+        translator_class = translators[args.translator]
+    else:
+        translator_class = cli.select_option("Selecione o tradutor:", translators)
+        if translator_class == "Exit": return False
+
+    translate = TranslatorFactory.create(translator_class.agent)
+
+    # 2. Selecionar Idioma de Origem
+    if args.source and args.source in lang_options.values():
+        lang_source = args.source
+    else:
+        lang_source = cli.select_option("Selecione o idioma de origem:", lang_options)
+        if lang_source == "Exit": return False
+
+    remove_lang_options(lang_source)
+
+    # 3. Selecionar Idioma de Destino
+    if args.target and args.target in lang_options.values():
+        lang_target = args.target
+    else:
+        lang_target = cli.select_option("Selecione o idioma de destino:", lang_options)
+        if lang_target == "Exit": return False
+
+    translate.change_language(lang_source, lang_target)
+
+    # 4. Configuração do Tradutor
+    if args.synopsis:
+        translate.apply_configuration({'synopsis': args.synopsis})
+    else:
+        translator_questions = translator_class.get_interactive_questions()
+        if translator_questions:
+            cli.clear_screen()
+            translator_config = {}
+            for question in translator_questions:
+                if 'title' in question: cli.print_colored_line(question['title'], 'cyan')
+                cli.print_colored_line(question['question'], question.get('color', 'white'))
+                answer = input().strip()
+                if answer or not question.get('required', False):
+                    translator_config[question['key']] = answer
+            translate.apply_configuration(translator_config)
+
+    # 5. Opção de Salvar (Apenas tradução ou Ambos)
+    keep_original = args.keep_original
+    if not args.keep_original and not args.translator: # Se não foi passado via CLI
+        save_options = {
+            'Salvar apenas a tradução (Renomear/Copiar com novo nome)': False,
+            'Salvar os dois juntos (Manter original e criar cópia traduzida)': True
+        }
+        keep_original = cli.select_option("Como deseja salvar os arquivos?", save_options)
+        if keep_original == "Exit": return False
+
+    # 6. Selecionar Pasta de Entrada
+    if args.input and os.path.exists(args.input):
+        input_dir = args.input
+    else:
+        input_dir = input("\nDigite o caminho da pasta com os arquivos (ou pressione Enter para './input'): ").strip()
+        if not input_dir:
+            input_dir = 'input'
+        
+        if not os.path.exists(input_dir):
+            cli.print_colored_line(f"Pasta '{input_dir}' não encontrada.", 'red')
+            return False
+
+    # 7. Executar Tradução
+    fn_translator = FileNameTranslator(translate)
+    fn_translator.process_directory(input_dir, keep_original)
+    return True
+
+
 def run_workflow(args):
     """
     Fluxo de trabalho unificado que usa argumentos CLI se fornecidos,
     caso contrário, solicita ao usuário de forma interativa.
     """
-    extractors = get_subclasses_map(BaseExtractor, 'name')
-    translators = get_subclasses_map(BaseTranslate, 'agent')
+    extractors = ExtractorFactory.get_available()
+    translators = TranslatorFactory.get_available()
+
+    # Selecionar Modo de Operação
+    mode = args.mode
+    if mode == 'content' and not any([args.extractor, args.translator, args.input, args.gui]):
+        # Se nenhum argumento relevante foi passado, pergunta o modo
+        modes = {
+            'Extrair e Traduzir Conteúdo de Arquivos': 'content',
+            'Traduzir Nomes de Arquivos': 'filenames',
+            'Sair': 'Exit'
+        }
+        mode = cli.select_option("O que você deseja fazer?", modes)
+        if mode == "Exit": return False
+
+    if mode == 'filenames':
+        return run_filename_translation_workflow(args, translators)
 
     # 1. Selecionar Extrator
     if args.extractor and args.extractor in extractors:
@@ -180,7 +282,7 @@ def run_workflow(args):
         translator_class = cli.select_option("Selecione o tradutor:", translators)
         if translator_class == "Exit": return False
 
-    translate = translator_class()
+    translate = TranslatorFactory.create(translator_class.agent)
 
     # 3. Selecionar Idioma de Origem
     if args.source and args.source in lang_options.values():
@@ -222,7 +324,7 @@ def run_workflow(args):
             translate.apply_configuration(translator_config)
 
     # 6. Configuração do Extrator
-    extractor = extractor_class(translate)
+    extractor = ExtractorFactory.create(extractor_class.name, translate)
     extractor_questions = extractor.get_interactive_questions()
     if extractor_questions:
         cli.clear_screen()
@@ -265,39 +367,64 @@ def run_workflow(args):
     )
 
 
-def run_extraction_process(extractor, translate, input_dir, lang_source, backup=True, verify=True):
+def run_extraction_process(extractor, translate, input_dir, lang_source, backup=True, verify=True, gui_signals=None):
     """Run the main extraction and translation process"""
+    def log(msg, color='white'):
+        logging.info(msg)
+        if gui_signals:
+            gui_signals.log.emit(msg, color)
+        else:
+            cli.print_colored_line(msg, color)
+
     try:
         if backup:
             backup_dir = input_dir + "-" + lang_source
-            cli.print_colored_line(f"Criando backup em: {backup_dir}", 'yellow')
+            log(f"Criando backup em: {backup_dir}", 'yellow')
             copy_files_only(input_dir, backup_dir)
 
         copy_files_only(input_dir, extractor.folderInput)
 
-        cli.print_colored_line("Iniciando processamento dos arquivos...", 'green')
+        log("Iniciando processamento dos arquivos...", 'green')
         extractor.process_files()
-        cli.show_status(extractor.threads_status)
+        
+        if not gui_signals:
+            cli.show_status(extractor.threads_status)
 
         if verify:
-            cli.instruction(f"Verifique a tradução dos arquivos na pasta '{extractor.folderProcess}', e pressione enter tecla para continuar")
+            if gui_signals:
+                log(f"Aviso: Verificação manual simplificada no modo GUI. Verifique a pasta '{extractor.folderProcess}'.", 'yellow')
+            else:
+                cli.instruction(f"Verifique a tradução dos arquivos na pasta '{extractor.folderProcess}', e pressione enter tecla para continuar")
 
-        cli.print_colored_line("Exportando arquivos", 'green')
+        log("Exportando arquivos", 'green')
         extractor.import_files()
         copy_files_only(extractor.folderOutput, input_dir)
 
         translate.save_cache()
-        cli.print_colored_line("Tradução finalizada com sucesso!", 'green')
+        log("Tradução finalizada com sucesso!", 'green')
 
         return True
 
     except Exception as e:
-        cli.print_colored_line(f"Erro durante o processamento: {str(e)}", 'red')
+        log(f"Erro durante o processamento: {str(e)}", 'red')
         return False
 
 
 if __name__ == '__main__':
+    setup_logging()
     args = parse_arguments()
+
+    # Opção para iniciar GUI
+    if args.gui:
+        try:
+            from src.gui import run_gui
+            run_gui(args, lang_options, run_extraction_process)
+            sys.exit(0)
+        except ImportError as e:
+            cli.print_colored_line(f"Erro: Não foi possível carregar a interface gráfica. Verifique se o PyQt5 está instalado.", 'red')
+            cli.print_colored_line(f"Detalhes: {e}", 'yellow')
+            cli.print_colored_line("\nIniciando modo terminal em 3 segundos...", 'cyan')
+            time.sleep(3)
 
     # Opções de listagem
     if args.list_extractors or args.list_translators or args.list_languages:
@@ -314,8 +441,8 @@ if __name__ == '__main__':
             cli.print_colored_line("\nIniciando modo interativo para corrigir...", 'yellow')
             time.sleep(2)
             # Limpar argumentos inválidos para forçar prompt
-            extractors = get_subclasses_map(BaseExtractor, 'name')
-            translators = get_subclasses_map(BaseTranslate, 'agent')
+            extractors = ExtractorFactory.get_available()
+            translators = TranslatorFactory.get_available()
             if args.extractor not in extractors: args.extractor = None
             if args.translator not in translators: args.translator = None
             if args.source not in lang_options.values(): args.source = None

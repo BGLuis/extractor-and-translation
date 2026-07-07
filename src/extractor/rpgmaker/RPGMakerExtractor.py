@@ -1,5 +1,3 @@
-import json
-import os
 import re
 import logging
 from src.extractor.BaseExtractor import BaseExtractor
@@ -10,9 +8,10 @@ from .RPGEventStrategy import (
     ShowTextStrategy, ChoiceStrategy, ScriptStrategy, 
     PluginStrategyMZ, PluginStrategyMV
 )
+from src.factory import register_extractor
 
+@register_extractor("RPG Maker")
 class RPGMakerExtractor(BaseExtractor):
-    name = 'RPG Maker'
     files_types = ['json', 'rvdata2']
 
     def __init__(self, translate):

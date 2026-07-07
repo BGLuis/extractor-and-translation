@@ -3,11 +3,11 @@ from dotenv import load_dotenv
 import os
 import ollama
 import src.utils.TextsUtils as TextsUtils
+from src.factory import register_translator
 load_dotenv()
 
-
+@register_translator("ollamaTranslator")
 class OllamaTranslate(BaseTranslate):
-    agent = 'ollamaTranslator'
     MAX_REQUESTS_SIMULTANEOUSLY = 10
     char_limit = 10000
     context_function = 'Translate the following text. Provide only the translated text, without any additional comments, explanations, or notes.'
