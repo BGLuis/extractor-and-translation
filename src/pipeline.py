@@ -69,18 +69,21 @@ class TranslationStep(PipelineStep):
 
 class UnmaskingStep(PipelineStep):
     def process(self, context: TranslationContext) -> TranslationContext:
-        try:
-            if context.mask_map:
-                context.text = TextsUtils.unmask_tokens_in_structure(context.text, context.mask_map)
-        except Exception as e:
-            logging.error(f"Erro no UnmaskingStep: {e}")
+        # Não engolir exceção aqui: um placeholder que não foi desmascarado não pode
+        # ir parar no arquivo final do jogo. Deixa propagar para process_file tentar
+        # de novo (com retry/backoff) em vez de gravar "__XTOK_..." visível ao jogador.
+        if context.mask_map:
+            context.text = TextsUtils.unmask_tokens_in_structure(context.text, context.mask_map)
         return context
 
 
 class FixingStep(PipelineStep):
     def process(self, context: TranslationContext) -> TranslationContext:
         try:
-            context.extractor.fix_text_translate(context.text, context.original_text)
+            # fix_text_translate pode mutar in-place (RPG Maker) e/ou retornar o texto
+            # corrigido (Json/CSV); sem usar o retorno, os dois últimos viram no-op.
+            fixed_text = context.extractor.fix_text_translate(context.text, context.original_text)
+            context.text = fixed_text if fixed_text is not None else context.text
         except Exception as e:
             logging.error(f"Erro no FixingStep: {e}")
         return context

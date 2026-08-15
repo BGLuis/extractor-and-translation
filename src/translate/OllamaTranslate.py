@@ -45,11 +45,8 @@ class OllamaTranslate(BaseTranslate):
     def change_language(self, lang_source, lang_target):
         self.lang_source = lang_source
         self.lang_target = lang_target
-
-        self.__class__.cache_path = f'{self.__class__.cache_path_base}/{self.__class__.agent}/cache_{self.lang_source}_{self.lang_target}.json'
-        self.__class__.cache = {}
+        self._load_cache_for_current_languages()
         self.context_language = f"Translate the text below from {self.lang_source} to {self.lang_target}:"
-        self.init_cache()
 
     @staticmethod
     def preprocess_text(texts):

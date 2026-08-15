@@ -5,7 +5,7 @@ import src.utils.TextsUtils as TextsUtils
 from .RPGEventCodes import RPGEventCode
 from .RPGTextFilters import RPGTextFilters
 from .RPGEventStrategy import (
-    ShowTextStrategy, ChoiceStrategy, ScriptStrategy, 
+    ShowTextStrategy, ChoiceStrategy, ChoiceBranchStrategy, ScriptStrategy,
     PluginStrategyMZ, PluginStrategyMV
 )
 from src.factory import register_extractor
@@ -26,16 +26,23 @@ class RPGMakerExtractor(BaseExtractor):
             RPGEventCode.SCRIPT_MORE: ScriptStrategy(),
             RPGEventCode.SHOW_NAME: ShowTextStrategy(),
             RPGEventCode.CHANGE_NAME: ShowTextStrategy(),
+            # Mesmo formato de parâmetros que CHANGE_NAME ([actorId, texto]): apelido e perfil
+            # do ator são texto visível ao jogador, não dado interno.
+            RPGEventCode.CHANGE_NICKNAME: ShowTextStrategy(),
+            RPGEventCode.CHANGE_PROFILE: ShowTextStrategy(),
             RPGEventCode.CONTROL_VARIABLES: ShowTextStrategy(),
             RPGEventCode.PLUGIN_COMMAND_MV: PluginStrategyMV(),
             RPGEventCode.PLUGIN_COMMAND_MZ: PluginStrategyMZ(),
+            RPGEventCode.CHOICE_BRANCH: ChoiceBranchStrategy(),
+            # LABEL (118) fica de propósito sem strategy: é um identificador interno de
+            # salto (ex: "loop_start", "end", "nochannel"), não texto de jogador.
         }
 
     def apply_configuration(self, config):
         pass
 
     def get_mask_patterns(self, file_name=None, data=None):
-        p_format_codes = re.compile(r'\\.[A-Za-z]{1,3}\s*\[[^\]]*\]', re.IGNORECASE)
+        p_format_codes = re.compile(r'\\[A-Za-z]{1,3}\s*\[[^\]]*\]', re.IGNORECASE)
         game_keys = ['variables', 'switches', 'party', 'actors', 'player', 'map', 'system', 'screen', 'timer', 'message', 'temp', 'troop', 'interpreter']
         p_game = re.compile(r'\$game(' + '|'.join(game_keys) + r')\b', re.IGNORECASE)
         p_bracket_vars = re.compile(r'!?(?<!\\)\b[A-Za-z]{1,2}\s*\[\s*\d+\s*\]', re.IGNORECASE)
@@ -166,7 +173,10 @@ class RPGMakerExtractor(BaseExtractor):
 
     _attributes_find = [r'name', r'note', r'profile', r'description', r'nickname', r'message\d{1}']
     _attributes_system_find = ['armorTypes', 'equipTypes', 'gameTitle', 'skillTypes', 'terms', 'switches', 'elements', 'weaponTypes']
-    _note_tag_pattern = re.compile(fr'(<{re.escape("Desc")}|{re.escape("Help")}|{re.escape("Text")}|{re.escape("Profile")}|{re.escape("Message")}|{re.escape("Info")}[^:>]*):\s*([^>]+)>', re.IGNORECASE)
+    # Tags de nota do tipo <Desc: ...>, <Help: ...>, <InfoAlgumaCoisa: ...>. O grupo 1
+    # precisa capturar só o nome da tag (sem o "<"), pois insert_text_object o reusa
+    # para reconstruir a tag original.
+    _note_tag_pattern = re.compile(r'<(Desc|Help|Text|Profile|Message|Info[^:>]*):\s*([^>]+)>', re.IGNORECASE)
 
     def extract_text_object(self, data):
         text = []
@@ -290,7 +300,7 @@ class RPGMakerExtractor(BaseExtractor):
             texts_list[i] = text
             if any(t in text for t in ['if(', 'var ', 'return', '=>', 'function', 'mes =', 'text =']):
                 try:
-                    parts = re.split(r'(".*?"|".*?")', text)
+                    parts = re.split(r'(\'.*?\'|".*?")', text)
                     for j in range(0, len(parts), 2):
                         parts[j] = re.sub(r'\b0+([1-9]\d*)\b', r'\1', parts[j])
                         parts[j] = re.sub(r'\b00+\b', '0', parts[j])
@@ -298,3 +308,4 @@ class RPGMakerExtractor(BaseExtractor):
                 except Exception as e: logging.warning(f'Erro ao sanitizar literais octais: {e}')
 
         TextsUtils.interactive_item(texts, texts_list)
+        return texts

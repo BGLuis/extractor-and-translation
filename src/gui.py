@@ -79,6 +79,11 @@ class TranslationWorker(QThread):
         self.verify = verify
         self.signals = WorkerSignals()
         self._wait_loop = None
+        self.extractor.add_observer(self._on_extractor_event)
+
+    def _on_extractor_event(self, event_name, data):
+        if event_name == 'status_update':
+            self.signals.status_update.emit(data)
 
     def run(self):
         try:
@@ -439,15 +444,9 @@ class TranslationGUI(QMainWindow):
         self.worker.signals.log.connect(self.log)
         self.worker.signals.finished.connect(self.on_finished)
         self.worker.signals.request_verification.connect(self.handle_verification)
-        
-        self.status_timer = self.startTimer(1000)
-        self.worker.extractor_to_poll = extractor
-        self.worker.start()
+        self.worker.signals.status_update.connect(self.update_progress)
 
-    def timerEvent(self, event):
-        if hasattr(self, 'worker') and self.worker and self.worker.isRunning():
-            status = self.worker.extractor_to_poll.threads_status
-            self.update_progress(status)
+        self.worker.start()
 
     def update_progress(self, status_list):
         if not status_list: return
@@ -459,7 +458,6 @@ class TranslationGUI(QMainWindow):
             self.statusBar().showMessage(f"Processando: {done_files}/{total_files} arquivos")
 
     def on_finished(self, success):
-        self.killTimer(self.status_timer)
         self.btn_start.setEnabled(True)
         self.btn_start.setText(" INICIAR TRADUÇÃO")
         self.btn_start.setIcon(qta.icon('fa5s.play', color='white'))

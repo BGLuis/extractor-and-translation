@@ -3,6 +3,8 @@ import copy
 import glob
 import json
 import os
+import shutil
+import threading
 import time
 import logging
 from abc import ABC, abstractmethod
@@ -20,6 +22,7 @@ class BaseExtractor(ABC):
         self.create_directory_if_not_exists(self.__class__.folderOutput)
         self.translate = translate
         self.threads_status = []
+        self.threads_status_lock = threading.Lock()
         self.futures = []
         self.executor = None
         self.observers = []
@@ -171,13 +174,12 @@ class BaseExtractor(ABC):
         if status_state != 'process': # Ignora logs de "process" repetitivos para não poluir o arquivo
             logging.info(f"[{status_state.upper()}] {file_path} - {msg}")
 
-        for i, s in enumerate(self.threads_status):
-            if s['file'] == status['file']:
-                self.threads_status.remove(s)
-        self.threads_status.append(status)
-        
-        # Notifica os observadores (ex: GUI/CLI) que o status mudou
-        self.notify_observers('status_update', self.threads_status)
+        with self.threads_status_lock:
+            self.threads_status = [s for s in self.threads_status if s['file'] != status['file']]
+            self.threads_status.append(status)
+            snapshot = list(self.threads_status)
+
+        self.notify_observers('status_update', snapshot)
 
     def _get_patterns(self, file_name, data):
         if hasattr(self, 'get_mask_patterns') and callable(getattr(self, 'get_mask_patterns')):
@@ -234,7 +236,7 @@ class BaseExtractor(ABC):
             {'file': file_path_str, 'status': 'ignore', 'msg': "No text to process"})
         self.import_file(file_name, data, self.folderOutput)
 
-    def process_file(self, file, retries=6, delay=20):
+    def process_file(self, file, retries=6, delay=20, max_delay=300):
         translate = copy.deepcopy(self.translate)
         file_path_str = str(file)
 
@@ -266,9 +268,10 @@ class BaseExtractor(ABC):
                     {'file': file_path_str, 'status': 'danger', 'msg': f"Error processing file {file}"})
 
                 if attempt < retries - 1:
+                    backoff = min(delay * (2 ** attempt), max_delay)
                     self.add_threads_status(
-                        {'file': file_path_str, 'status': 'waiting', 'msg': f"Retrying in {delay} seconds..."})
-                    time.sleep(delay)
+                        {'file': file_path_str, 'status': 'waiting', 'msg': f"Retrying in {backoff} seconds..."})
+                    time.sleep(backoff)
                     translate.reduce_limite()
                 else:
                     self.add_threads_status(

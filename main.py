@@ -1,3 +1,5 @@
+import src.extractor  # noqa: F401 (Importado para registrar as classes na Factory)
+import src.translate  # noqa: F401 (Importado para registrar as classes na Factory)
 from src.services.FileNameTranslator import FileNameTranslator
 import shutil
 from src import cli
@@ -28,19 +30,13 @@ lang_options = {
 
 from src.factory import ExtractorFactory, TranslatorFactory
 
-def remove_lang_options(lang_source):
-    """Remove o idioma de origem e a opção 'auto' da lista de destino"""
-    # Remove o idioma selecionado como origem
-    for key in list(lang_options.keys()):
-        if lang_options[key] == lang_source:
-            lang_options.pop(key)
-            break
-            
-    # Se a origem não for auto, remove o auto do destino
+def target_lang_options(lang_source):
+    """Opções de idioma de destino: sem o idioma de origem e, se a origem não for
+    'auto', também sem a opção 'auto'."""
+    options = {k: v for k, v in lang_options.items() if v != lang_source}
     if lang_source != 'auto':
-        auto_keys = [k for k, v in lang_options.items() if v == 'auto']
-        for k in auto_keys:
-            lang_options.pop(k)
+        options = {k: v for k, v in options.items() if v != 'auto'}
+    return options
 
 def copy_file(src, dst):
     shutil.copy(src, dst)
@@ -54,7 +50,7 @@ def delete_file_folder(pasta):
         if os.path.isfile(caminho):
             os.remove(caminho)
 
-def copy_files_only(src, dst):
+def copy_files_only(src, dst, clear_destination=True):
     src_real = os.path.realpath(src)
     dst_real = os.path.realpath(dst)
 
@@ -65,7 +61,11 @@ def copy_files_only(src, dst):
     if not os.path.exists(dst):
         os.makedirs(dst)
 
-    delete_file_folder(dst)
+    # clear_destination=False é usado quando dst pode conter arquivos sem
+    # equivalente em src (ex: um arquivo que falhou o processamento) e que,
+    # portanto, não podem ser apagados sem substituto.
+    if clear_destination:
+        delete_file_folder(dst)
 
     for item in os.listdir(src):
         s = os.path.join(src, item)
@@ -190,13 +190,11 @@ def run_filename_translation_workflow(args, translators):
         lang_source = cli.select_option("Selecione o idioma de origem:", lang_options)
         if lang_source == "Exit": return False
 
-    remove_lang_options(lang_source)
-
     # 3. Selecionar Idioma de Destino
-    if args.target and args.target in lang_options.values():
+    if args.target and args.target in lang_options.values() and args.target != lang_source:
         lang_target = args.target
     else:
-        lang_target = cli.select_option("Selecione o idioma de destino:", lang_options)
+        lang_target = cli.select_option("Selecione o idioma de destino:", target_lang_options(lang_source))
         if lang_target == "Exit": return False
 
     translate.change_language(lang_source, lang_target)
@@ -219,7 +217,7 @@ def run_filename_translation_workflow(args, translators):
 
     # 5. Opção de Salvar (Apenas tradução ou Ambos)
     keep_original = args.keep_original
-    if not args.keep_original and not args.translator: # Se não foi passado via CLI
+    if not args.keep_original:
         save_options = {
             'Salvar apenas a tradução (Renomear/Copiar com novo nome)': False,
             'Salvar os dois juntos (Manter original e criar cópia traduzida)': True
@@ -291,13 +289,11 @@ def run_workflow(args):
         lang_source = cli.select_option("Selecione o idioma de origem:", lang_options)
         if lang_source == "Exit": return False
 
-    remove_lang_options(lang_source)
-
     # 4. Selecionar Idioma de Destino
-    if args.target and args.target in lang_options.values():
+    if args.target and args.target in lang_options.values() and args.target != lang_source:
         lang_target = args.target
     else:
-        lang_target = cli.select_option("Selecione o idioma de destino:", lang_options)
+        lang_target = cli.select_option("Selecione o idioma de destino:", target_lang_options(lang_source))
         if lang_target == "Exit": return False
 
     translate.change_language(lang_source, lang_target)
@@ -367,7 +363,7 @@ def run_workflow(args):
     )
 
 
-def run_extraction_process(extractor, translate, input_dir, lang_source, backup=True, verify=True, gui_signals=None):
+def run_extraction_process(extractor, translate, input_dir, lang_source, backup=True, verify=True, gui_signals=None, gui_verify_callback=None):
     """Run the main extraction and translation process"""
     def log(msg, color='white'):
         logging.info(msg)
@@ -379,28 +375,43 @@ def run_extraction_process(extractor, translate, input_dir, lang_source, backup=
     try:
         if backup:
             backup_dir = input_dir + "-" + lang_source
-            log(f"Criando backup em: {backup_dir}", 'yellow')
-            copy_files_only(input_dir, backup_dir)
+            if os.path.exists(backup_dir) and os.listdir(backup_dir):
+                log(f"Backup já existe em '{backup_dir}'; mantendo o original preservado e pulando nova cópia.", 'yellow')
+            else:
+                log(f"Criando backup em: {backup_dir}", 'yellow')
+                copy_files_only(input_dir, backup_dir)
 
         copy_files_only(input_dir, extractor.folderInput)
 
         log("Iniciando processamento dos arquivos...", 'green')
         extractor.process_files()
-        
+
         if not gui_signals:
-            cli.show_status(extractor.threads_status)
+            cli.show_status(extractor)
+        else:
+            # No modo CLI o show_status já bloqueia até o pool terminar; na GUI
+            # precisamos aguardar explicitamente antes de pedir a verificação manual.
+            import concurrent.futures
+            concurrent.futures.wait(extractor.futures)
 
         if verify:
-            if gui_signals:
+            if gui_verify_callback:
+                log(f"Aguardando verificação manual da pasta '{extractor.folderProcess}'...", 'yellow')
+                if not gui_verify_callback(extractor.folderProcess):
+                    log("Processamento abortado pelo usuário na verificação.", 'red')
+                    return False
+            elif gui_signals:
                 log(f"Aviso: Verificação manual simplificada no modo GUI. Verifique a pasta '{extractor.folderProcess}'.", 'yellow')
             else:
                 cli.instruction(f"Verifique a tradução dos arquivos na pasta '{extractor.folderProcess}', e pressione enter tecla para continuar")
 
         log("Exportando arquivos", 'green')
         extractor.import_files()
-        copy_files_only(extractor.folderOutput, input_dir)
+        # clear_destination=False: um arquivo que falhou o processamento não
+        # existe em folderOutput, e não pode ser apagado de input_dir sem
+        # substituto (perderia o original sem gerar tradução nenhuma).
+        copy_files_only(extractor.folderOutput, input_dir, clear_destination=False)
 
-        translate.save_cache()
         log("Tradução finalizada com sucesso!", 'green')
 
         return True
@@ -408,6 +419,15 @@ def run_extraction_process(extractor, translate, input_dir, lang_source, backup=
     except Exception as e:
         log(f"Erro durante o processamento: {str(e)}", 'red')
         return False
+
+    finally:
+        # Persiste o cache de traduções mesmo se o processamento falhar ou for
+        # interrompido (Ctrl+C incluso, já que finally roda também nesse caso),
+        # para não perder o trabalho já feito na sessão.
+        try:
+            translate.save_cache()
+        except Exception as cache_error:
+            log(f"Aviso: falha ao salvar o cache de traduções: {cache_error}", 'yellow')
 
 
 if __name__ == '__main__':

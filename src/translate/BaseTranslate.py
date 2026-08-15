@@ -1,13 +1,14 @@
 from abc import ABC, abstractmethod
+import copy
 import os
-import json
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from src.translate.TranslationMemory import TranslationMemory
 
 
 class BaseTranslate(ABC):
     agent = 'BaseTranslate'
-    cache = {}
-    cache_path = ''
     delimiter = '\n<span> </span>\n'
     char_limit = 5000
     CHAR_LIMIT_MIN = 1000
@@ -17,31 +18,52 @@ class BaseTranslate(ABC):
     cache_path_base = 'cache'
     MAX_REQUESTS_SIMULTANEOUSLY = 99
 
-    def __init__(self, delimiter=None, char_limit=None,lang_source=None, lang_target=None):
+    # Teto de requisições simultâneas por classe de tradutor, compartilhado entre
+    # todos os arquivos/threads de uma mesma execução (evita o produto
+    # arquivos-em-paralelo x lotes-em-paralelo virar dezenas de requisições de uma vez).
+    _request_semaphores = {}
+    _request_semaphore_lock = threading.Lock()
+
+    @classmethod
+    def _get_request_semaphore(cls):
+        with BaseTranslate._request_semaphore_lock:
+            sem = BaseTranslate._request_semaphores.get(cls.__name__)
+            if sem is None:
+                limit = int(os.environ.get('TRANSLATE_MAX_CONCURRENT_REQUESTS', cls.MAX_REQUESTS_SIMULTANEOUSLY))
+                sem = threading.Semaphore(max(1, limit))
+                BaseTranslate._request_semaphores[cls.__name__] = sem
+            return sem
+
+    def __init__(self, delimiter=None, char_limit=None, lang_source=None, lang_target=None):
         self.delimiter = delimiter if delimiter else self.__class__.delimiter
         self.char_limit = char_limit if char_limit else self.__class__.char_limit
-        self.__class__.lang_source = lang_source if lang_source else self.__class__.lang_source
-        self.__class__.lang_target = lang_target if lang_target else self.__class__.lang_target
+        self.lang_source = lang_source if lang_source else self.__class__.lang_source
+        self.lang_target = lang_target if lang_target else self.__class__.lang_target
         self.translate_client = None
         self.game_synopsis = None
-        self.__class__.cache_path = f'{self.__class__.cache_path_base}/{self.__class__.agent}/cache_{self.__class__.lang_source}_{self.__class__.lang_target}.json'
-        self.__class__.init_cache()
+        self._load_cache_for_current_languages()
 
+    def __deepcopy__(self, memo):
+        new_obj = self.__class__.__new__(self.__class__)
+        memo[id(self)] = new_obj
+        for key, value in self.__dict__.items():
+            if key in ('cache', 'cache_lock'):
+                setattr(new_obj, key, value)
+            else:
+                setattr(new_obj, key, copy.deepcopy(value, memo))
+        return new_obj
 
     @classmethod
     def from_default(cls):
         return cls()
 
-
     @classmethod
     def from_languages(cls, lang_source, lang_target):
-        return cls(lang_source, lang_target)
-
+        return cls(lang_source=lang_source, lang_target=lang_target)
 
     @classmethod
     def from_all(cls):
         return cls(BaseTranslate.delimiter, BaseTranslate.char_limit, BaseTranslate.lang_source, BaseTranslate.lang_target)
-
 
     def reduce_limite(self):
         if self.char_limit > self.__class__.CHAR_LIMIT_MIN:
@@ -63,32 +85,21 @@ class BaseTranslate(ABC):
 
         self.translate_client.target = self.lang_target
         self.translate_client.source = self.lang_source
-        self.__class__.cache_path = f'{self.__class__.cache_path_base}/{self.__class__.agent}/cache_{self.lang_source}_{self.lang_target}.json'
-        self.__class__.cache = {}
-        self.init_cache()
+        self._load_cache_for_current_languages()
 
-    @classmethod
-    def init_cache(cls):
-        os.makedirs(os.path.dirname(cls.cache_path), exist_ok=True)
+    def _load_cache_for_current_languages(self):
+        self.cache_path = f'{self.__class__.cache_path_base}/memory.db'
+        self.cache = TranslationMemory(
+            self.cache_path, self.lang_source, self.lang_target,
+            engine=self.__class__.agent, game=getattr(self, 'game_name', None),
+        )
+        self.cache_lock = threading.Lock()
 
-        if not os.path.exists(cls.cache_path):
-            with open(cls.cache_path, 'w', encoding='utf-8') as f:
-                f.write(json.dumps({"": ""}, ensure_ascii=False, indent=4))
-
-        if not cls.cache:
-            with open(cls.cache_path, 'r', encoding='utf-8') as f:
-                cls.cache = json.load(f)
-
-    @classmethod
-    def save_cache(cls):
-        if os.path.exists(cls.cache_path):
-            with open(cls.cache_path, 'r', encoding='utf-8') as f:
-                file_cache = json.load(f)
-
-            file_cache.update(cls.cache)
-
-            with open(cls.cache_path, 'w', encoding='utf-8') as f:
-                f.write(json.dumps(file_cache, ensure_ascii=False, indent=4))
+    def save_cache(self):
+        # TranslationMemory já commita a cada store(); mantido só para não quebrar
+        # quem chama translate.save_cache() esperando um flush explícito no final.
+        with self.cache._lock:
+            self.cache._conn.commit()
 
 
     @classmethod
@@ -144,9 +155,15 @@ class BaseTranslate(ABC):
         translated_batches = [None] * len(batches)
         start_time = time.time()
 
+        semaphore = self.__class__._get_request_semaphore()
+
+        def _translate_with_limit(batch):
+            with semaphore:
+                return self._translate_single_batch(batch)
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_index = {
-                executor.submit(self._translate_single_batch, batch): idx
+                executor.submit(_translate_with_limit, batch): idx
                 for idx, batch in enumerate(batches)
             }
 
@@ -179,14 +196,15 @@ class BaseTranslate(ABC):
         non_cached_indices = []
         none_indices = [] # Indices where input text is None
 
-        for i, text in enumerate(texts):
-            if text is None:
-                none_indices.append(i)
-            elif isinstance(text, str) and text in self.__class__.cache:
-                translated_texts[i] = self.__class__.cache[text]
-                cache_indices.append(i)
-            else:
-                non_cached_indices.append(i)
+        with self.cache_lock:
+            for i, text in enumerate(texts):
+                if text is None:
+                    none_indices.append(i)
+                elif isinstance(text, str) and text in self.cache:
+                    translated_texts[i] = self.cache[text]
+                    cache_indices.append(i)
+                else:
+                    non_cached_indices.append(i)
 
         non_cached_texts = [texts[i] for i in non_cached_indices]
 
@@ -196,6 +214,8 @@ class BaseTranslate(ABC):
             translated_batches_results = self.translate_batch_parallel(batches, progress_callback)
 
             # Process batches and apply fallback ONLY to failed batches
+            semaphore = self.__class__._get_request_semaphore()
+
             translated_results = []
             for batch_idx, batch_result in enumerate(translated_batches_results):
                 original_batch = batches[batch_idx]
@@ -208,14 +228,16 @@ class BaseTranslate(ABC):
                             translated_pieces = []
                             for p in pieces:
                                 try:
-                                    t = self._translate_single_batch([p])
+                                    with semaphore:
+                                        t = self._translate_single_batch([p])
                                     translated_pieces.append(t[0] if t else p)
                                 except Exception:
                                     translated_pieces.append(p)
                             safe_results.append("".join(translated_pieces))
                         else:
                             try:
-                                single = self._translate_single_batch([text])
+                                with semaphore:
+                                    single = self._translate_single_batch([text])
                                 safe_results.append(single[0] if single else text)
                             except Exception:
                                 safe_results.append(text)
@@ -236,7 +258,8 @@ class BaseTranslate(ABC):
                     result = translated_results[current_result_idx]
                     translated_texts[original_idx] = result
                     if isinstance(original_text, str):
-                         self.__class__.cache[original_text] = result
+                        with self.cache_lock:
+                            self.cache[original_text] = result
                     current_result_idx += 1
                 else:
                     # Fallback if translation returned fewer items than expected

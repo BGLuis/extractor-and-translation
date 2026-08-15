@@ -110,33 +110,34 @@ def mask_tokens_in_structure(obj, patterns, prefix="__XTOK_"):
     return walk(obj), mapping
 
 
+def _contains_any(obj, needles):
+    if isinstance(obj, str):
+        return any(needle in obj for needle in needles)
+    elif isinstance(obj, dict):
+        return any(_contains_any(v, needles) for v in obj.values())
+    elif isinstance(obj, (list, tuple)):
+        return any(_contains_any(v, needles) for v in obj)
+    return False
+
+
 def unmask_tokens_in_structure(obj, mapping):
     """
     Restaura placeholders em `obj` usando o dicionário `mapping` (placeholder -> original).
     Funciona recursivamente sobre dict/list/tuple/str.
+
+    Levanta exceção se algum placeholder não puder ser restaurado: deixar um
+    "__XTOK_xxxxxxxx__" vazar para o arquivo final do jogo é pior do que falhar o
+    processamento desse arquivo e deixar o retry de process_file tentar de novo.
     """
     if not mapping:
         return obj
 
     # Ordenar por comprimento decrescente evita substituições parciais
     placeholders = sorted(mapping.keys(), key=len, reverse=True)
-    try:
-        pattern = re.compile("|".join(re.escape(p) for p in placeholders))
-    except Exception:
-        # fallback: nada a fazer
-        pattern = None
+    pattern = re.compile("|".join(re.escape(p) for p in placeholders))
 
     def unmask_string(s):
-        if not pattern:
-            return s
-
-        def _repl(m):
-            return mapping.get(m.group(0), m.group(0))
-
-        try:
-            return pattern.sub(_repl, s)
-        except Exception:
-            return s
+        return pattern.sub(lambda m: mapping[m.group(0)], s)
 
     def walk(o):
         if isinstance(o, str):
@@ -150,4 +151,9 @@ def unmask_tokens_in_structure(obj, mapping):
         else:
             return o
 
-    return walk(obj)
+    restored = walk(obj)
+
+    if _contains_any(restored, placeholders):
+        raise ValueError("Desmascaramento incompleto: placeholder de texto sobrou no resultado final.")
+
+    return restored

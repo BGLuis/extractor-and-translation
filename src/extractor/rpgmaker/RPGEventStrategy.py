@@ -205,9 +205,11 @@ class PluginStrategyMZ(EventStrategy):
         extracted = {}
         for key, val in params.items():
             if key in self.TECHNICAL_KEYS: continue
-            
-            # Avoid extracting purely technical string values like "upper", "number", "false", etc.
-            if isinstance(val, str) and not RPGTextFilters.is_technical_or_code(val):
+
+            # Chaves fora de TEXT_KEYS são valores de configuração (align, easing...), não
+            # diálogo: aqui "Start"/"Auto"/"Center" são técnicos e não devem ser extraídos.
+            context = 'dialogue' if key in self.TEXT_KEYS else 'param'
+            if isinstance(val, str) and not RPGTextFilters.is_technical_or_code(val, context=context):
                 if key in self.TEXT_KEYS or ' ' in val or any(c in val for c in '.,;:!?　、。！？'):
                     extracted[key] = val
         
