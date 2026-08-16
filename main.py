@@ -3,6 +3,7 @@ import src.translate  # noqa: F401 (Importado para registrar as classes na Facto
 from src.services.FileNameTranslator import FileNameTranslator
 import shutil
 from src import cli
+from src.cli import _i18n  # instância compartilhada: a paleta de idioma do cli.py também retraduz aqui
 import os
 import argparse
 import sys
@@ -129,17 +130,17 @@ Exemplos de uso:
 
 def list_options():
     """Print available options and exit"""
-    print("\n=== EXTRATORES DISPONÍVEIS ===")
+    print(_i18n.tr('cli_extractors_available'))
     extractors = ExtractorFactory.get_available()
     for name in extractors.keys():
         print(f"  - {name}")
 
-    print("\n=== TRADUTORES DISPONÍVEIS ===")
+    print(_i18n.tr('cli_translators_available'))
     translators = TranslatorFactory.get_available()
     for name in translators.keys():
         print(f"  - {name}")
 
-    print("\n=== IDIOMAS SUPORTADOS ===")
+    print(_i18n.tr('cli_languages_supported'))
     for lang_name, lang_code in lang_options.items():
         print(f"  - {lang_code}: {lang_name}")
 
@@ -150,24 +151,24 @@ def validate_arguments(args):
     if args.extractor:
         extractors = ExtractorFactory.get_available()
         if args.extractor not in extractors:
-            errors.append(f"Extrator '{args.extractor}' não encontrado. Opções: {list(extractors.keys())}")
+            errors.append(_i18n.tr('error_extractor_not_found', name=args.extractor, options=list(extractors.keys())))
 
     if args.translator:
         translators = TranslatorFactory.get_available()
         if args.translator not in translators:
-            errors.append(f"Tradutor '{args.translator}' não encontrado. Opções: {list(translators.keys())}")
+            errors.append(_i18n.tr('error_translator_not_found', name=args.translator, options=list(translators.keys())))
 
     if args.source and args.source not in lang_options.values():
-        errors.append(f"Idioma de origem '{args.source}' não suportado. Opções: {list(lang_options.values())}")
+        errors.append(_i18n.tr('error_source_lang_unsupported', lang=args.source, options=list(lang_options.values())))
 
     if args.target and args.target not in lang_options.values():
-        errors.append(f"Idioma de destino '{args.target}' não suportado. Opções: {list(lang_options.values())}")
+        errors.append(_i18n.tr('error_target_lang_unsupported', lang=args.target, options=list(lang_options.values())))
 
     if args.input and not os.path.exists(args.input):
-        errors.append(f"Pasta de entrada '{args.input}' não existe")
+        errors.append(_i18n.tr('error_input_folder_not_exist', path=args.input))
 
     if args.source and args.target and args.source == args.target:
-        errors.append("Idioma de origem e destino não podem ser iguais")
+        errors.append(_i18n.tr('error_same_lang_bare'))
 
     return errors
 
@@ -178,7 +179,7 @@ def run_filename_translation_workflow(args, translators):
     if args.translator and args.translator in translators:
         translator_class = translators[args.translator]
     else:
-        translator_class = cli.select_option("Selecione o tradutor:", translators)
+        translator_class = cli.select_option(lambda: _i18n.tr('prompt_select_translator'), translators)
         if translator_class == "Exit": return False
 
     translate = TranslatorFactory.create(translator_class.agent)
@@ -187,14 +188,14 @@ def run_filename_translation_workflow(args, translators):
     if args.source and args.source in lang_options.values():
         lang_source = args.source
     else:
-        lang_source = cli.select_option("Selecione o idioma de origem:", lang_options)
+        lang_source = cli.select_option(lambda: _i18n.tr('prompt_select_source_lang'), lang_options)
         if lang_source == "Exit": return False
 
     # 3. Selecionar Idioma de Destino
     if args.target and args.target in lang_options.values() and args.target != lang_source:
         lang_target = args.target
     else:
-        lang_target = cli.select_option("Selecione o idioma de destino:", target_lang_options(lang_source))
+        lang_target = cli.select_option(lambda: _i18n.tr('prompt_select_target_lang'), target_lang_options(lang_source))
         if lang_target == "Exit": return False
 
     translate.change_language(lang_source, lang_target)
@@ -218,23 +219,24 @@ def run_filename_translation_workflow(args, translators):
     # 5. Opção de Salvar (Apenas tradução ou Ambos)
     keep_original = args.keep_original
     if not args.keep_original:
-        save_options = {
-            'Salvar apenas a tradução (Renomear/Copiar com novo nome)': False,
-            'Salvar os dois juntos (Manter original e criar cópia traduzida)': True
-        }
-        keep_original = cli.select_option("Como deseja salvar os arquivos?", save_options)
+        def save_options():
+            return {
+                _i18n.tr('save_translation_only'): False,
+                _i18n.tr('save_both'): True
+            }
+        keep_original = cli.select_option(lambda: _i18n.tr('prompt_how_to_save'), save_options)
         if keep_original == "Exit": return False
 
     # 6. Selecionar Pasta de Entrada
     if args.input and os.path.exists(args.input):
         input_dir = args.input
     else:
-        input_dir = input("\nDigite o caminho da pasta com os arquivos (ou pressione Enter para './input'): ").strip()
+        input_dir = input(_i18n.tr('prompt_input_folder')).strip()
         if not input_dir:
             input_dir = 'input'
-        
+
         if not os.path.exists(input_dir):
-            cli.print_colored_line(f"Pasta '{input_dir}' não encontrada.", 'red')
+            cli.print_colored_line(_i18n.tr('error_folder_not_found', path=input_dir), 'red')
             return False
 
     # 7. Executar Tradução
@@ -255,12 +257,13 @@ def run_workflow(args):
     mode = args.mode
     if mode == 'content' and not any([args.extractor, args.translator, args.input, args.gui]):
         # Se nenhum argumento relevante foi passado, pergunta o modo
-        modes = {
-            'Extrair e Traduzir Conteúdo de Arquivos': 'content',
-            'Traduzir Nomes de Arquivos': 'filenames',
-            'Sair': 'Exit'
-        }
-        mode = cli.select_option("O que você deseja fazer?", modes)
+        def modes():
+            return {
+                _i18n.tr('mode_content'): 'content',
+                _i18n.tr('mode_filenames'): 'filenames',
+                _i18n.tr('mode_exit'): 'Exit'
+            }
+        mode = cli.select_option(lambda: _i18n.tr('prompt_what_to_do'), modes)
         if mode == "Exit": return False
 
     if mode == 'filenames':
@@ -270,14 +273,14 @@ def run_workflow(args):
     if args.extractor and args.extractor in extractors:
         extractor_class = extractors[args.extractor]
     else:
-        extractor_class = cli.select_option("Selecione o extrator de texto:", extractors)
+        extractor_class = cli.select_option(lambda: _i18n.tr('prompt_select_extractor'), extractors)
         if extractor_class == "Exit": return False
 
     # 2. Selecionar Tradutor
     if args.translator and args.translator in translators:
         translator_class = translators[args.translator]
     else:
-        translator_class = cli.select_option("Selecione o tradutor:", translators)
+        translator_class = cli.select_option(lambda: _i18n.tr('prompt_select_translator'), translators)
         if translator_class == "Exit": return False
 
     translate = TranslatorFactory.create(translator_class.agent)
@@ -286,14 +289,14 @@ def run_workflow(args):
     if args.source and args.source in lang_options.values():
         lang_source = args.source
     else:
-        lang_source = cli.select_option("Selecione o idioma de origem:", lang_options)
+        lang_source = cli.select_option(lambda: _i18n.tr('prompt_select_source_lang'), lang_options)
         if lang_source == "Exit": return False
 
     # 4. Selecionar Idioma de Destino
     if args.target and args.target in lang_options.values() and args.target != lang_source:
         lang_target = args.target
     else:
-        lang_target = cli.select_option("Selecione o idioma de destino:", target_lang_options(lang_source))
+        lang_target = cli.select_option(lambda: _i18n.tr('prompt_select_target_lang'), target_lang_options(lang_source))
         if lang_target == "Exit": return False
 
     translate.change_language(lang_source, lang_target)
@@ -301,7 +304,7 @@ def run_workflow(args):
     # 5. Configuração do Tradutor
     if args.synopsis:
         translate.apply_configuration({'synopsis': args.synopsis})
-        cli.print_colored_line(f"✓ Sinopse configurada via CLI", 'green')
+        cli.print_colored_line(_i18n.tr('log_synopsis_configured'), 'green')
     else:
         translator_questions = translator_class.get_interactive_questions()
         if translator_questions:
@@ -315,7 +318,7 @@ def run_workflow(args):
                 if answer or not question.get('required', False):
                     translator_config[question['key']] = answer
                 else:
-                    cli.print_colored_line(f"\n✗ {question['key'].capitalize()} é obrigatório!", 'red')
+                    cli.print_colored_line(_i18n.tr('error_field_required', field=question['key'].capitalize()), 'red')
                     return False
             translate.apply_configuration(translator_config)
 
@@ -333,7 +336,7 @@ def run_workflow(args):
             if answer or not question.get('required', False):
                 extractor_config[question['key']] = answer
             else:
-                cli.print_colored_line(f"\n✗ {question['key'].capitalize()} é obrigatório!", 'red')
+                cli.print_colored_line(_i18n.tr('error_field_required', field=question['key'].capitalize()), 'red')
                 return False
         extractor.apply_configuration(extractor_config)
 
@@ -343,18 +346,18 @@ def run_workflow(args):
     if args.input and os.path.exists(args.input):
         input_dir = args.input
     else:
-        cli.instruction(f"Pressione enter para selecionar a pasta de entrada dos arquivos")
-        input_dir = cli.select_folder("Selecione a pasta de entrada dos arquivos")
+        cli.instruction(lambda: _i18n.tr('prompt_press_enter_select_folder'))
+        input_dir = cli.select_folder(lambda: _i18n.tr('dialog_select_input_folder'))
         if input_dir is None:
-            cli.print_colored_line("Nenhuma pasta selecionada. Encerrando o programa.", 'red')
+            cli.print_colored_line(_i18n.tr('error_no_folder_selected'), 'red')
             return False
 
     # 8. Executar Processo
     cli.clear_screen()
-    cli.print_colored_line(f"Usando extrator: {extractor_class.name}", 'cyan')
-    cli.print_colored_line(f"Usando tradutor: {translator_class.agent}", 'cyan')
-    cli.print_colored_line(f"Traduzindo de {lang_source} para {lang_target}", 'cyan')
-    cli.print_colored_line(f"Pasta de entrada: {input_dir}", 'cyan')
+    cli.print_colored_line(_i18n.tr('log_using_extractor', name=extractor_class.name), 'cyan')
+    cli.print_colored_line(_i18n.tr('log_using_translator', name=translator_class.agent), 'cyan')
+    cli.print_colored_line(_i18n.tr('log_translating_from_to', source=lang_source, target=lang_target), 'cyan')
+    cli.print_colored_line(_i18n.tr('log_input_folder', path=input_dir), 'cyan')
 
     return run_extraction_process(
         extractor, translate, input_dir, lang_source, 
@@ -376,14 +379,14 @@ def run_extraction_process(extractor, translate, input_dir, lang_source, backup=
         if backup:
             backup_dir = input_dir + "-" + lang_source
             if os.path.exists(backup_dir) and os.listdir(backup_dir):
-                log(f"Backup já existe em '{backup_dir}'; mantendo o original preservado e pulando nova cópia.", 'yellow')
+                log(_i18n.tr('log_backup_exists', path=backup_dir), 'yellow')
             else:
-                log(f"Criando backup em: {backup_dir}", 'yellow')
+                log(_i18n.tr('log_creating_backup', path=backup_dir), 'yellow')
                 copy_files_only(input_dir, backup_dir)
 
         copy_files_only(input_dir, extractor.folderInput)
 
-        log("Iniciando processamento dos arquivos...", 'green')
+        log(_i18n.tr('log_processing_files'), 'green')
         extractor.process_files()
 
         if not gui_signals:
@@ -396,28 +399,28 @@ def run_extraction_process(extractor, translate, input_dir, lang_source, backup=
 
         if verify:
             if gui_verify_callback:
-                log(f"Aguardando verificação manual da pasta '{extractor.folderProcess}'...", 'yellow')
+                log(_i18n.tr('log_waiting_verification', path=extractor.folderProcess), 'yellow')
                 if not gui_verify_callback(extractor.folderProcess):
-                    log("Processamento abortado pelo usuário na verificação.", 'red')
+                    log(_i18n.tr('log_verification_aborted'), 'red')
                     return False
             elif gui_signals:
-                log(f"Aviso: Verificação manual simplificada no modo GUI. Verifique a pasta '{extractor.folderProcess}'.", 'yellow')
+                log(_i18n.tr('log_gui_verification_notice', path=extractor.folderProcess), 'yellow')
             else:
-                cli.instruction(f"Verifique a tradução dos arquivos na pasta '{extractor.folderProcess}', e pressione enter tecla para continuar")
+                cli.instruction(lambda: _i18n.tr('instruction_verify_folder', path=extractor.folderProcess))
 
-        log("Exportando arquivos", 'green')
+        log(_i18n.tr('log_exporting_files'), 'green')
         extractor.import_files()
         # clear_destination=False: um arquivo que falhou o processamento não
         # existe em folderOutput, e não pode ser apagado de input_dir sem
         # substituto (perderia o original sem gerar tradução nenhuma).
         copy_files_only(extractor.folderOutput, input_dir, clear_destination=False)
 
-        log("Tradução finalizada com sucesso!", 'green')
+        log(_i18n.tr('log_finished_success'), 'green')
 
         return True
 
     except Exception as e:
-        log(f"Erro durante o processamento: {str(e)}", 'red')
+        log(_i18n.tr('log_processing_error', error=str(e)), 'red')
         return False
 
     finally:
@@ -427,7 +430,7 @@ def run_extraction_process(extractor, translate, input_dir, lang_source, backup=
         try:
             translate.save_cache()
         except Exception as cache_error:
-            log(f"Aviso: falha ao salvar o cache de traduções: {cache_error}", 'yellow')
+            log(_i18n.tr('log_cache_save_warning', error=cache_error), 'yellow')
 
 
 if __name__ == '__main__':
@@ -441,9 +444,9 @@ if __name__ == '__main__':
             run_gui(args, lang_options, run_extraction_process)
             sys.exit(0)
         except ImportError as e:
-            cli.print_colored_line(f"Erro: Não foi possível carregar a interface gráfica. Verifique se o PyQt5 está instalado.", 'red')
-            cli.print_colored_line(f"Detalhes: {e}", 'yellow')
-            cli.print_colored_line("\nIniciando modo terminal em 3 segundos...", 'cyan')
+            cli.print_colored_line(_i18n.tr('error_gui_unavailable'), 'red')
+            cli.print_colored_line(_i18n.tr('log_details', error=e), 'yellow')
+            cli.print_colored_line(_i18n.tr('log_starting_terminal_mode'), 'cyan')
             time.sleep(3)
 
     # Opções de listagem
@@ -455,10 +458,10 @@ if __name__ == '__main__':
     if any([args.extractor, args.translator, args.source, args.target, args.input]):
         errors = validate_arguments(args)
         if errors:
-            cli.print_colored_line("Erros nos argumentos CLI:", 'red')
+            cli.print_colored_line(_i18n.tr('error_cli_arguments'), 'red')
             for error in errors:
                 cli.print_colored_line(f"  - {error}", 'red')
-            cli.print_colored_line("\nIniciando modo interativo para corrigir...", 'yellow')
+            cli.print_colored_line(_i18n.tr('log_starting_interactive_mode'), 'yellow')
             time.sleep(2)
             # Limpar argumentos inválidos para forçar prompt
             extractors = ExtractorFactory.get_available()
@@ -474,10 +477,10 @@ if __name__ == '__main__':
         success = run_workflow(args)
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print("\n\nOperação cancelada pelo usuário.")
+        print(_i18n.tr('log_operation_cancelled'))
         sys.exit(0)
     except Exception as e:
-        cli.print_colored_line(f"\nErro fatal: {e}", 'red')
+        cli.print_colored_line(_i18n.tr('error_fatal', error=e), 'red')
         import traceback
         traceback.print_exc()
         sys.exit(1)

@@ -1,103 +1,87 @@
 <div align="center">
 
-  ![Python][Python.io]
+<!-- Badges de Status do GitHub -->
+![GitHub Stars](https://www.shieldcn.dev/github/stars/bgluis/extractor-and-translation.svg?variant=secondary&size=sm)
+![GitHub Forks](https://www.shieldcn.dev/github/forks/bgluis/extractor-and-translation.svg?variant=secondary&size=sm)
+![Watchers](https://www.shieldcn.dev/github/watchers/bgluis/extractor-and-translation.svg?variant=secondary&size=sm)
+![Contributors](https://www.shieldcn.dev/github/contributors/bgluis/extractor-and-translation.svg?theme=emerald&size=sm)
+![License](https://www.shieldcn.dev/github/license/bgluis/extractor-and-translation.svg?variant=ghost&size=sm)
 
+<br/>
 
-  [![Contributors][contributors-shield]][contributors-url]
-  [![Forks][forks-shield]][forks-url]
-  [![Stargazers][stars-shield]][stars-url]
-  [![Issues][issues-shield]][issues-url]
-  [![Unlicense License][license-shield]][license-url]
-
-  <!-- <a href="https://github.com/bgluis/extractor-and-translation/">
-    <img src="images/logo.png" alt="Logo" width="80" height="80">
-  </a> -->
+<!-- Badges das Tecnologias Utilizadas -->
+![Python](https://www.shieldcn.dev/badge/Python-3776AB.svg?logo=python&variant=branded&size=sm)
+![Docker](https://www.shieldcn.dev/badge/Docker-2496ED.svg?logo=docker&variant=branded&size=sm)
+![Ollama](https://www.shieldcn.dev/badge/Ollama-FFFFFF.svg?logo=ollama&variant=branded&size=sm)
 
   <h3>Extractor and Translation</h3>
-  Tradutor de jogos
+  Text extraction and translation tool for RPG Maker games and JSON i18n files.
 </div>
 
-# 📖 Sobre
-Descreva o que é o seu projeto e pra que ele serve
+*Read this in other languages: [Português](README.pt-br.md)*
 
-# 📋 Motivo
-O por que esse projeto existe?
+# 📖 About
+Extractor and Translation is a Python-based tool designed to extract translatable text from specific formats and automate its translation using AI models via Ollama. It leverages modern libraries like PyQt5 for a GUI and deep_translator/Ollama for translating game assets and localization JSON files efficiently. It simplifies the localization process by managing the context and concurrency of requests to the AI engine.
 
-# 💻 Como iniciar
-Instruções de como executar o seu projeto
+# 📋 Reason
+The project was initially created to translate RPG Maker games, and later the concept evolved to also translate website JSON i18n files.
 
-## Pré-requisitos
-Certifique-se de ter o Python 3.10 instalado. Você pode baixá-lo [aqui](https://www.python.org/downloads/).
+# 💻 Getting Started
 
-## Instalação
+### Requirements
+- [Python 3.10+](https://www.python.org/downloads/)
+- [Docker](https://docs.docker.com/get-docker/) (Optional, for containerized execution)
+- [Ollama](https://ollama.com/) (If using local LLMs for translation)
 
-### Usando Docker (recomendado)
-1. Certifique-se de ter o [Docker](https://docs.docker.com/get-docker/) e o [docker-compose](https://docs.docker.com/compose/install/) instalados.
-2. No Linux, permita acesso ao X11 para aplicações gráficas:
-   ```sh
-   xhost +local:docker
-   ```
-3. Clone o repositório:
-   ```sh
-   git clone https://github.com/bgluis/extractor-and-translation.git
-   cd extractor-and-translation
-   ```
-4. Construa e suba o container:
-   ```sh
-   docker-compose up --build
-   ```
-5. Para abrir um terminal interativo dentro do container:
-   ```sh
-	docker-compose run --service-ports app /bin/bash
-	python main.py
-   ```
+### Installation
 
-### Instalação manual (sem Docker)
-1. Certifique-se de ter o Python 3.11 instalado. Você pode baixá-lo [aqui](https://www.python.org/downloads/).
-2. Crie um ambiente virtual:
-   ```sh
-   python3.11 -m venv venv
-   ```
-3. Ative o ambiente virtual:
-   - No Windows:
-     ```sh
-     venv\Scripts\activate
-     ```
-   - No macOS/Linux:
-     ```sh
-     source venv/bin/activate
-     ```
-4. Instale as dependências:
-   ```sh
-   pip install -r requirements.txt
-   ```
+1. Clone the repository:
+  ```sh
+  git clone https://github.com/bgluis/extractor-and-translation.git
+  ```
 
-## Uso
-1. Execute o script principal:
-   ```sh
-   python main.py
-   ```
-2. Siga as instruções exibidas no terminal ou na interface gráfica.
+2. Navigate to the project directory:
+  ```sh
+  cd extractor-and-translation
+  ```
 
-Pronto! Agora você deve estar apto a usar o projeto.
+#### Method 1: Native Execution (Python)
 
-# 🤝 Contribuidores
- <a href = "https://github.com/bgluis/extractor-and-translation/graphs/contributors">
-   <img src = "https://contrib.rocks/image?repo=bgluis/extractor-and-translation"/>
+3. Create and activate a virtual environment (optional but recommended):
+  ```sh
+  python -m venv .venv
+  source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
+  ```
+
+4. Install the dependencies:
+  ```sh
+  pip install -r requirements.txt
+  ```
+
+5. Run the application:
+  ```sh
+  python main.py
+  ```
+
+#### Method 2: Docker Execution
+
+3. Build and start the container using Docker Compose:
+  ```sh
+  docker-compose up -d --build
+  ```
+
+# ⚙️ Environment Variables
+The application uses environment variables for configuration. You can copy `.env.example` to `.env` and adjust the values.
+
+| Variable | Description | Default Value |
+| --- | --- | --- |
+| `OLLAMA_MODEL` | Ollama model to be used for translation (e.g., llama3.1, mistral) | `llama3.1` |
+| `OLLAMA_MAX_REQUESTS` | Maximum number of concurrent requests to the model | `5` |
+| `OLLAMA_CHAR_LIMIT` | Character limit per request (optional) | `10000` |
+| `OLLAMA_CONTEXT_FUNCTION` | Custom function context for the prompt (optional) | - |
+| `OLLAMA_CONTEXT_ADDITIONAL`| Additional context for the prompt (optional) | - |
+
+# 🤝 Contributors
+ <a href="https://github.com/bgluis/extractor-and-translation/graphs/contributors">
+   <img src="https://contrib.rocks/image?repo=bgluis/extractor-and-translation"/>
  </a>
-
- <!-- Links -->
- <!-- https://github.com/iuricode/readme-template-->
-[repossitory-path]: bgluis/extractor-and-translation/
-[contributors-shield]: https://img.shields.io/github/contributors/bgluis/extractor-and-translation.svg?style=for-the-badge
-[contributors-url]: https://github.com/bgluis/extractor-and-translation/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/bgluis/extractor-and-translation.svg?style=for-the-badge
-[forks-url]: https://github.com/bgluis/extractor-and-translation/network/members
-[stars-shield]: https://img.shields.io/github/stars/bgluis/extractor-and-translation.svg?style=for-the-badge
-[stars-url]: https://github.com/bgluis/extractor-and-translation/stargazers
-[issues-shield]: https://img.shields.io/github/issues/bgluis/extractor-and-translation.svg?style=for-the-badge
-[issues-url]: https://github.com/bgluis/extractor-and-translation/issues
-[license-shield]: https://img.shields.io/github/license/bgluis/extractor-and-translation.svg?style=for-the-badge
-[license-url]: https://github.com/bgluis/extractor-and-translation/blob/master/LICENSE.txt
-
-[Python.io]: https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white
