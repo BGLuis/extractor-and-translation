@@ -5,11 +5,12 @@ from rich.text import Text
 
 from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
-from textual.widgets import DataTable, DirectoryTree, Footer, OptionList, Static
+from textual.widgets import DataTable, DirectoryTree, Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from src.i18n import LANGUAGES, Translator
 from src.services.SettingsStore import SettingsStore
+from src.utils.ClipboardUtils import get_clipboard_folder, get_clipboard_text
 
 STYLE_MAP = {
     'reset': 'default', 'red': 'red', 'green': 'green', 'yellow': 'yellow',
@@ -162,41 +163,123 @@ def instruction(description, color='green'):
 class _SelectFolderApp(_LanguagePaletteMixin, App):
     BINDINGS = [
         Binding("escape", "cancel", _i18n.tr('cli_binding_cancel')),
-        Binding("s", "confirm", _i18n.tr('cli_binding_select_folder')),
+        Binding("s", "confirm_tree", _i18n.tr('cli_binding_select_folder')),
+        Binding("ctrl+v", "paste_clipboard", _i18n.tr('cli_binding_paste')),
     ]
+    CSS = """
+    #folder-title { padding: 1 2 0 2; }
+    #folder-input { margin: 1 2 0 2; }
+    #error-label { color: red; margin: 0 2; height: 1; }
+    DirectoryTree { height: 1fr; margin: 0 2 1 2; }
+    """
 
-    def __init__(self, title, start_path):
+    def __init__(self, title, start_path, initial_input=""):
         super().__init__()
         self._title_source = title
         self.start_path = start_path
+        self.initial_input = initial_input
 
     def _resolve_title(self):
         return self._title_source() if callable(self._title_source) else self._title_source
 
     def compose(self) -> ComposeResult:
         yield Static(self._resolve_title(), id="folder-title")
+        yield Input(
+            value=self.initial_input,
+            placeholder=_i18n.tr('cli_placeholder_folder_input'),
+            id="folder-input"
+        )
+        yield Static("", id="error-label")
         yield DirectoryTree(self.start_path)
         yield Footer()
 
-    def action_confirm(self) -> None:
-        node = self.query_one(DirectoryTree).cursor_node
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        raw = event.value.strip().strip("'\"")
+        if raw.startswith("file://"):
+            raw = raw[7:]
+        path = os.path.abspath(os.path.expanduser(raw))
+        if os.path.isdir(path):
+            self.exit(path)
+        else:
+            self.query_one("#error-label", Static).update(_i18n.tr('error_folder_not_found', path=raw))
+
+    def action_confirm_tree(self) -> None:
+        tree = self.query_one(DirectoryTree)
+        node = tree.cursor_node
         if node is not None and node.data is not None and node.data.path.is_dir():
             self.exit(str(node.data.path))
 
     def action_cancel(self) -> None:
         self.exit(None)
 
+    def action_paste_clipboard(self) -> None:
+        clip = get_clipboard_text()
+        if clip:
+            inp = self.query_one("#folder-input", Input)
+            inp.value = clip
+            inp.focus()
+
     def _apply_language(self):
         self.query_one("#folder-title", Static).update(self._resolve_title())
+        self.query_one("#folder-input", Input).placeholder = _i18n.tr('cli_placeholder_folder_input')
         self.bind("escape", "cancel", description=_i18n.tr('cli_binding_cancel'))
-        self.bind("s", "confirm", description=_i18n.tr('cli_binding_select_folder'))
+        self.bind("s", "confirm_tree", description=_i18n.tr('cli_binding_select_folder'))
+        self.bind("ctrl+v", "paste_clipboard", description=_i18n.tr('cli_binding_paste'))
         self.refresh_bindings()
 
 
 def select_folder(title=None):
-    """``title`` aceita um valor fixo ou um callable sem argumento (retraduzido ao
-    trocar o idioma pela paleta de comandos)."""
-    return _SelectFolderApp(title or (lambda: _i18n.tr('cli_default_select_folder_title')), os.getcwd()).run()
+    """
+    Permite selecionar uma pasta no modo CLI:
+    1. Verifica se há um caminho de diretório válido na área de transferência (clipboard).
+       Se houver, exibe uma pergunta ao usuário dando a opção de usar diretamente essa pasta,
+       digitar/colar outra manualmente ou navegar pelo explorador de pastas.
+    2. Se não houver ou se o usuário desejar navegar, abre a interface com campo de texto
+       (para digitação/colagem de caminho com validação) e árvore de diretórios interativa.
+    """
+    clipboard_folder = get_clipboard_folder()
+
+    if clipboard_folder:
+        def folder_options():
+            return {
+                f"📋 {_i18n.tr('cli_opt_use_clipboard', path=clipboard_folder)}": "clipboard",
+                f"⌨️  {_i18n.tr('cli_opt_type_path')}": "manual",
+                f"📁 {_i18n.tr('cli_opt_browse_tree')}": "tree",
+                f"❌ {_i18n.tr('cli_binding_cancel')}": "cancel",
+            }
+
+        choice = select_option(
+            lambda: _i18n.tr('cli_clipboard_folder_detected_title', path=clipboard_folder),
+            folder_options
+        )
+        if choice == "clipboard":
+            return clipboard_folder
+        elif choice in ("cancel", "Exit"):
+            return None
+        elif choice == "manual":
+            clear_screen()
+            print_colored_line(_i18n.tr('prompt_type_folder_path'), 'cyan')
+            while True:
+                path = input("> ").strip().strip("'\"")
+                if not path:
+                    return None
+                if path.startswith("file://"):
+                    path = path[7:]
+                expanded = os.path.abspath(os.path.expanduser(path))
+                if os.path.isdir(expanded):
+                    return expanded
+                print_colored_line(_i18n.tr('error_folder_not_found', path=path), 'red')
+                print_colored_line(_i18n.tr('prompt_try_again_or_empty'), 'yellow')
+        elif choice == "tree":
+            return _SelectFolderApp(
+                title or (lambda: _i18n.tr('cli_default_select_folder_title')),
+                os.getcwd()
+            ).run()
+
+    return _SelectFolderApp(
+        title or (lambda: _i18n.tr('cli_default_select_folder_title')),
+        os.getcwd()
+    ).run()
 
 
 class _StatusApp(_LanguagePaletteMixin, App):
@@ -228,7 +311,22 @@ class _StatusApp(_LanguagePaletteMixin, App):
         table = self.query_one(DataTable)
         table.clear()
         all_done = True
-        for status in status_list:
+
+        # Coloca arquivos em processamento ('process') no topo da listagem
+        status_priority = {
+            'process': 0,
+            'waiting': 1,
+            'erro': 2,
+            'danger': 2,
+            'success': 3,
+            'ignore': 4,
+        }
+        sorted_status_list = sorted(
+            status_list,
+            key=lambda s: (status_priority.get(s.get('status', ''), 99), s.get('file', ''))
+        )
+
+        for status in sorted_status_list:
             s_code = status.get('status', '')
             file_name = os.path.basename(status.get('file', ''))
             msg = status.get('msg', '')

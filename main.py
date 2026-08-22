@@ -231,12 +231,10 @@ def run_filename_translation_workflow(args, translators):
     if args.input and os.path.exists(args.input):
         input_dir = args.input
     else:
-        input_dir = input(_i18n.tr('prompt_input_folder')).strip()
-        if not input_dir:
-            input_dir = 'input'
-
-        if not os.path.exists(input_dir):
-            cli.print_colored_line(_i18n.tr('error_folder_not_found', path=input_dir), 'red')
+        cli.instruction(lambda: _i18n.tr('prompt_press_enter_select_folder'))
+        input_dir = cli.select_folder(lambda: _i18n.tr('dialog_select_input_folder'))
+        if input_dir is None:
+            cli.print_colored_line(_i18n.tr('error_no_folder_selected'), 'red')
             return False
 
     # 7. Executar Tradução

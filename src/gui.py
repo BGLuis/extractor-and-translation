@@ -1,8 +1,11 @@
 import sys
 import os
 import time
-import qtawesome as qta
-from qt_material import apply_stylesheet
+
+import PyQt5.QtCore
+import PyQt5.QtGui
+import PyQt5.QtWidgets
+import PyQt5.QtSvg
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -10,8 +13,21 @@ from PyQt5.QtWidgets import (
     QTextEdit, QCheckBox, QProgressBar, QSplitter, 
     QGroupBox, QDialog, QDialogButtonBox
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, QThread, QSize, QEventLoop, QUrl
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, QThread, QSize, QEventLoop, QUrl, QDir
 from PyQt5.QtGui import QFont, QDesktopServices
+
+import qtawesome as qta
+import qt_material
+from qt_material import apply_stylesheet
+from qt_material.resources import RESOURCES_PATH
+
+# Garante compatibilidade do qt_material com PyQt5 e resolução de ícones SVG
+qt_material.QFontDatabase = PyQt5.QtGui.QFontDatabase
+qt_material.QGuiApplication = PyQt5.QtGui.QGuiApplication
+qt_material.QPalette = PyQt5.QtGui.QPalette
+qt_material.QColor = PyQt5.QtGui.QColor
+qt_material.QDir = PyQt5.QtCore.QDir
+qt_material.GUI = True
 
 from src.factory import ExtractorFactory, TranslatorFactory
 from src.i18n import Translator, LANGUAGES
@@ -475,10 +491,17 @@ class TranslationGUI(QMainWindow):
         if not status_list: return
         total_files = len(status_list)
         done_files = sum(1 for s in status_list if s.get('status') in ['success', 'erro', 'ignore'])
+        processing_files = [os.path.basename(s.get('file', '')) for s in status_list if s.get('status') == 'process']
         if total_files > 0:
             percent = int((done_files / total_files) * 100)
             self.progress_bar.setValue(percent)
-            self.statusBar().showMessage(self.tr_('status_processing', done=done_files, total=total_files))
+            if processing_files:
+                proc_str = ", ".join(processing_files[:3])
+                if len(processing_files) > 3:
+                    proc_str += f" (+{len(processing_files)-3})"
+                self.statusBar().showMessage(f"{self.tr_('status_processing', done=done_files, total=total_files)} | {proc_str}")
+            else:
+                self.statusBar().showMessage(self.tr_('status_processing', done=done_files, total=total_files))
 
     def on_finished(self, success):
         self.btn_start.setEnabled(True)
@@ -496,6 +519,8 @@ class TranslationGUI(QMainWindow):
 def run_gui(args, lang_options, run_process_func):
     app = QApplication(sys.argv)
     apply_stylesheet(app, theme='dark_blue.xml')
+    QDir.addSearchPath('icon', os.path.join(RESOURCES_PATH, 'theme'))
+    QDir.addSearchPath('qt_material', os.path.join(os.path.dirname(qt_material.__file__), 'resources'))
     window = TranslationGUI(args, lang_options, run_process_func)
     window.show()
     sys.exit(app.exec_())

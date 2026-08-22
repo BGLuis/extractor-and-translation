@@ -39,19 +39,47 @@ class GoogleTranslate(BaseTranslate):
         if not texts:
             return []
 
-        list_join = self.delimiter.join(texts)
-        translate_str = self.translate_client.translate(list_join)
-        translate_list = translate_str.split(self.delimiter)
+        import time
 
-        # Se o delimitador for alterado pelo provedor, o batch pode ficar desalinhado.
-        # Nessa situação, traduzimos item a item para manter mapeamento correto.
-        if len(translate_list) != len(texts):
-            safe_results = []
-            for text in texts:
-                safe_results.append(self.translate_client.translate(text))
-            return safe_results
+        max_retries = 3
+        last_error = None
 
-        return translate_list
+        for attempt in range(max_retries):
+            try:
+                list_join = self.delimiter.join(texts)
+                translate_str = self.translate_client.translate(list_join)
+                if not translate_str:
+                    raise ValueError("Empty translation received")
+                translate_list = translate_str.split(self.delimiter)
+
+                # Se o delimitador for alterado pelo provedor, o batch pode ficar desalinhado.
+                # Nessa situação, traduzimos item a item para manter mapeamento correto.
+                if len(translate_list) != len(texts):
+                    safe_results = []
+                    for text in texts:
+                        try:
+                            res = self.translate_client.translate(text)
+                            safe_results.append(res if res is not None else text)
+                        except Exception:
+                            safe_results.append(text)
+                    return safe_results
+
+                return translate_list
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+                else:
+                    if len(texts) > 1:
+                        safe_results = []
+                        for text in texts:
+                            try:
+                                res = self.translate_client.translate(text)
+                                safe_results.append(res if res is not None else text)
+                            except Exception:
+                                safe_results.append(text)
+                        return safe_results
+                    raise last_error
 
 
     def translator(self, texts, progress_callback=None):
