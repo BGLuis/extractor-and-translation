@@ -174,3 +174,73 @@ def test_status_app_reflects_updates_from_a_background_thread():
         return app.return_value
 
     run_async(body)
+
+
+def test_select_folder_input_valid_submits(tmp_path):
+    async def body():
+        app = _SelectFolderApp("Selecione:", ".", initial_input=str(tmp_path))
+        async with app.run_test() as pilot:
+            await pilot.press("enter")
+        return app.return_value
+
+    assert run_async(body) == str(tmp_path)
+
+
+def test_select_folder_input_invalid_shows_error():
+    async def body():
+        app = _SelectFolderApp("Selecione:", ".", initial_input="/caminho_inexistente_12345")
+        async with app.run_test() as pilot:
+            await pilot.press("enter")
+            err = app.query_one("#error-label").render()
+            await pilot.press("escape")
+        return str(err), app.return_value
+
+    err_text, return_val = run_async(body)
+    assert "não encontrada" in err_text or "not found" in err_text
+    assert return_val is None
+
+
+def test_select_folder_tree_selection(tmp_path):
+    async def body():
+        app = _SelectFolderApp("Selecione:", str(tmp_path))
+        async with app.run_test() as pilot:
+            tree = app.query_one(cli_module.DirectoryTree)
+            tree.focus()
+            await pilot.press("s")
+        return app.return_value
+
+    res = run_async(body)
+    assert res is not None
+
+
+def test_select_folder_with_clipboard(monkeypatch, tmp_path):
+    import os
+    valid_folder = str(tmp_path)
+    monkeypatch.setattr(cli_module, "get_clipboard_folder", lambda: valid_folder)
+    monkeypatch.setattr(cli_module, "select_option", lambda title, options: "clipboard")
+
+    selected = cli_module.select_folder()
+    assert selected == valid_folder
+
+
+def test_status_app_sorts_processing_files_on_top():
+    async def body():
+        extractor = _FakeExtractor()
+        extractor.threads_status = [
+            {'file': 'Map001.json', 'status': 'waiting', 'msg': 'Na fila'},
+            {'file': 'Map002.json', 'status': 'success', 'msg': 'Concluído'},
+            {'file': 'Map003.json', 'status': 'process', 'msg': 'Traduzindo...'},
+            {'file': 'Map004.json', 'status': 'waiting', 'msg': 'Na fila'},
+        ]
+        app = _StatusApp(extractor)
+        async with app.run_test() as pilot:
+            table = app.query_one(cli_module.DataTable)
+            # Lê a primeira linha da tabela
+            first_row_file = table.get_row_at(0)[0]
+            await pilot.pause()
+        return first_row_file
+
+    first_file = run_async(body)
+    assert first_file == "Map003.json"
+
+
